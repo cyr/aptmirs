@@ -1,0 +1,19 @@
+[package]
+name = "aptmirs"
+description = "A simple tool to mirror and host apt repositories"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+async-channel = "1.9.0"
+clap = { version = "4.3.12", features = ["cargo", "derive"] }
+console = "0.15.7"
+flate2 = "1.0.26"
+indicatif = "0.17.5"
+pathdiff = "0.2.1"
+reqwest = { version = "0.11.18", features = ["rustls", "rustls-native-certs", "tokio-rustls", "rustls-tls"] }
+thiserror = "1.0.43"
+tokio = { version = "1.29.1", features = ["macros", "rt-multi-thread", "fs"] }
+xz2 = { version = "0.1.7", features = ["tokio"] }
