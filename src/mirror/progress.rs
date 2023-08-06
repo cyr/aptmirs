@@ -1,8 +1,8 @@
-use std::sync::{Arc, atomic::{AtomicU64, Ordering, AtomicU8}};
+use std::{sync::{Arc, atomic::{AtomicU64, Ordering, AtomicU8}}, time::Duration};
 
 use console::{style, pad_str};
 use indicatif::{ProgressBar, ProgressStyle, ProgressFinish, HumanBytes};
-use tokio::sync::Mutex;
+use tokio::{sync::Mutex, time::sleep};
 
 pub const TOTAL_STEPS: u8 = 3;
 
@@ -92,6 +92,17 @@ impl Progress {
         self.files.reset();
 
         self.step.fetch_add(1, Ordering::SeqCst);
+    }
+    
+    pub async fn wait_for_completion(&self, progress_bar: &mut ProgressBar)  {
+        while self.files.remaining() > 0 {
+            self.update_progress_bar(progress_bar);
+            sleep(Duration::from_millis(100)).await
+        }
+
+        self.update_progress_bar(progress_bar);
+
+        progress_bar.finish_using_style();
     }
 }
 

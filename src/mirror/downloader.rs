@@ -1,5 +1,5 @@
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use async_channel::{bounded, Sender, Receiver};
 use reqwest::{Client, StatusCode};
@@ -7,11 +7,11 @@ use tokio::{task::JoinHandle, io::AsyncWriteExt, fs::symlink};
 
 use crate::error::{Result, MirsError};
 
-use super::{Download, progress::Progress};
+use super::progress::Progress;
 
 pub struct Downloader {
     sender: Sender<Download>,
-    tasks: Vec<JoinHandle<()>>,
+    _tasks: Vec<JoinHandle<()>>,
     progress: Progress,
     http_client: Client
 }
@@ -61,7 +61,7 @@ impl Downloader {
 
         Self {
             sender,
-            tasks,
+            _tasks: tasks,
             progress,
             http_client
         }
@@ -93,6 +93,7 @@ impl Downloader {
         Ok(())
     }
 
+
     pub fn progress(&self) -> Progress {
         self.progress.clone()
     }
@@ -106,7 +107,7 @@ async fn download_file<F>(http_client: &mut Client, download: Download, mut prog
         return Err(MirsError::Download { uri: download.uri.clone(), status_code: response.status() })
     }
 
-    if download.always_download || !download.primary_target_path.exists() {
+    if needs_downloading(&download) {
         create_dirs(&download.primary_target_path).await?;
 
         let mut output = tokio::fs::File::create(&download.primary_target_path).await?;
@@ -146,4 +147,29 @@ pub async fn create_dirs(path: &Path) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn needs_downloading(dl: &Download) -> bool {
+    if dl.always_download {
+        return true
+    }
+
+    if let Ok(metadata) = dl.primary_target_path.metadata() {
+        if let Some(size) = dl.size {
+            return size != metadata.len()
+        }
+
+        return false
+    }
+
+    true
+}
+
+#[derive(Debug)]
+pub struct Download {
+    pub uri: String,
+    pub size: Option<u64>,
+    pub primary_target_path: PathBuf,
+    pub symlink_paths: Vec<PathBuf>,
+    pub always_download: bool
 }

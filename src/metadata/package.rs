@@ -46,11 +46,11 @@ impl Iterator for Package {
         loop {
             match self.reader.read_line(&mut self.buf) {
                 Ok(_) if self.buf.starts_with("Filename: ") => 
-                    path = Some(PathBuf::from(self.buf.strip_prefix("Filename: ").expect("this is true!").trim())),
+                    path = Some(PathBuf::from(self.buf.strip_prefix("Filename: ").expect("prefix is guaranteed to be here").trim())),
                 Ok(_) if self.buf.starts_with("Size: ") => {
-                    let value = self.buf.strip_prefix("Size: ").expect("this is true!").trim();
+                    let value = self.buf.strip_prefix("Size: ").expect("prefix is guaranteed to be here!").trim();
 
-                    let value = value.parse().expect("this needs to be true, too!");
+                    let value = value.parse().expect("value of Size should be an integer");
 
                     size = Some(value)
                 },

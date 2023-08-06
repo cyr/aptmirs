@@ -4,7 +4,7 @@ use async_channel::SendError;
 use reqwest::StatusCode;
 use thiserror::Error;
 
-use crate::mirror::Download;
+use crate::mirror::downloader::Download;
 
 pub type Result<T> = std::result::Result<T, MirsError>;
 
