@@ -80,15 +80,14 @@ impl Downloader {
     }
 
     pub async fn download(&mut self, download: Download) -> Result<()> {
-        match download_file(&mut self.http_client, download, |bytes| {
+        if let Err(e) = download_file(&mut self.http_client, download, |bytes| {
             self.progress.bytes.inc_success(bytes)
         }).await {
-            Ok(()) => self.progress.files.inc_success(1),
-            Err(e) => {
-                self.progress.files.inc_skipped(1);
-                return Err(e)
-            }
+            self.progress.files.inc_skipped(1);
+            return Err(e)
         }
+        
+        self.progress.files.inc_success(1);
         
         Ok(())
     }
@@ -101,24 +100,26 @@ impl Downloader {
 
 async fn download_file<F>(http_client: &mut Client, download: Download, mut progress_callback: F) -> Result<()>
     where F: FnMut(u64) {
-    let mut response = http_client.get(&download.uri).send().await?;
-
-    if response.status() == StatusCode::NOT_FOUND {
-        return Err(MirsError::Download { uri: download.uri.clone(), status_code: response.status() })
-    }
-
     if needs_downloading(&download) {
         create_dirs(&download.primary_target_path).await?;
 
         let mut output = tokio::fs::File::create(&download.primary_target_path).await?;
-    
-        while let Some(chunk) = response.chunk().await? {
-            output.write_all(&chunk).await?;
-    
-            progress_callback(chunk.len() as u64);
+
+        if download.size.is_some_and(|v| v > 0) || download.size.is_none() {
+            let mut response = http_client.get(&download.uri).send().await?;
+
+            if response.status() == StatusCode::NOT_FOUND {
+                return Err(MirsError::Download { uri: download.uri.clone(), status_code: response.status() })
+            }
+
+            while let Some(chunk) = response.chunk().await? {
+                output.write_all(&chunk).await?;
+        
+                progress_callback(chunk.len() as u64);
+            }
+        
+            output.flush().await?;
         }
-    
-        output.flush().await?;
     }
 
     for symlink_path in download.symlink_paths {

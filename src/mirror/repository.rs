@@ -1,70 +1,38 @@
 use std::path::{PathBuf, Path};
 
-use super::downloader::{Downloader, Download};
+use reqwest::Url;
+
+use super::downloader::Download;
 
 use crate::{error::{Result, MirsError}, metadata::release::FileEntry};
 
 pub struct Repository {
-    archive_root_uri: String,
-    dist_uri: String,
-    base_dir: PathBuf
+    root_uri: String,
+    root_dir: PathBuf,
+    dist_uri: String
 }
 
 impl Repository {
-    pub fn new(archive_root: &str, dist: &str, base_dir: &Path) -> Self {
-        let archive_root_uri = if !archive_root.ends_with('/') {
-            format!("{archive_root}/")
-        } else {
-            archive_root.to_string()
+    pub fn build(archive_root: &str, dist: &str, base_dir: &Path) -> Result<Self> {
+        let root_uri = match archive_root.strip_prefix('/') {
+            Some(uri) => uri.to_string(),
+            None => archive_root.to_string(),
         };
 
-        let dist_uri = format!("{}dists/{}", archive_root_uri, dist);
+        let dist_uri = format!("{root_uri}/dists/{dist}");
+        
+        let root_dir = local_dir_from_archive_uri(&root_uri, base_dir)?;
 
-        Self {
-            archive_root_uri,
-            dist_uri,
-            base_dir: base_dir.to_path_buf()
-        }
+        Ok(Self {
+            root_uri,
+            root_dir,
+            dist_uri
+        })
     }
 
-    pub async fn download_release(&mut self, downloader: &mut Downloader) -> Result<Vec<PathBuf>> {
-        let mut files = Vec::with_capacity(3);
 
-        let mut progress = downloader.progress();
-        progress.files.inc_total(3);
-
-        let mut progress_bar = progress.create_download_progress_bar().await;
-
-        for file_uri in self.release_files() {
-            let destination = self.to_local_path(&file_uri);
-
-            let dl = Download {
-                primary_target_path: destination.clone(),
-                uri: file_uri,
-                size: None,
-                symlink_paths: Vec::new(),
-                always_download: true
-            };
-
-            let download_res = downloader.download(dl).await;
-
-            progress.update_progress_bar(&mut progress_bar);
-
-            if let Err(e) = download_res {
-                eprintln!("{e}");
-                continue
-            }
-
-            files.push(destination);
-        }
-
-        progress_bar.finish_using_style();
-
-        Ok(files)
-    }
-
-    fn release_files(&self) -> Vec<String> {
-        vec![
+    pub fn release_files(&self) -> [String; 3] {
+        [
             format!("{}/InRelease", self.dist_uri),
             format!("{}/Release", self.dist_uri),
             format!("{}/Release.gpg", self.dist_uri)
@@ -73,18 +41,27 @@ impl Repository {
 
     pub fn to_local_path(&self, uri: &str) -> PathBuf {
         let relative_path = uri
-            .strip_prefix(&self.archive_root_uri).expect("implementation error; download uri is not in archive root");
+            .strip_prefix(&self.root_uri).expect("implementation error; download uri should be in archive root");
 
-        self.base_dir.join(relative_path)
+        let relative_path = match relative_path.strip_prefix('/') {
+            Some(path) => path,
+            None => relative_path,
+        };
+
+        self.root_dir.join(relative_path)
     }
 
-    pub fn to_uri_in_dist(&self, path: &String) -> String {
+    pub fn to_uri_in_dist(&self, path: &str) -> String {
         format!("{}/{}", self.dist_uri, path)
     }
 
-    pub fn create_package_download(&self, path: &Path, size: u64) -> Download {
-        let primary_target_path = self.base_dir.join(path);
-        let uri = format!("{}{}", self.archive_root_uri, path.to_string_lossy());
+    pub fn to_uri_in_root(&self, path: &str) -> String {
+        format!("{}/{}", self.root_uri, path)
+    }
+
+    pub fn create_file_download(&self, path: &str, size: u64) -> Download {
+        let uri = self.to_uri_in_root(path);
+        let primary_target_path = self.to_local_path(&uri);
 
         Download {
             uri,
@@ -95,7 +72,7 @@ impl Repository {
         }
     }
 
-    pub fn create_metadata_download(&self, path: &String, file_entry: FileEntry, by_hash: bool) -> Result<Download> {
+    pub fn create_metadata_download(&self, path: &str, file_entry: FileEntry, by_hash: bool) -> Result<Download> {
         let uri = self.to_uri_in_dist(path);
         let file_path = self.to_local_path(&uri);
 
@@ -134,4 +111,22 @@ impl Repository {
             always_download: false
         })
     }
+}
+
+fn local_dir_from_archive_uri(uri: &str, dir: &Path) -> Result<PathBuf> {
+    let parsed_uri = Url::parse(uri)
+        .map_err(|_| MirsError::UrlParsing { url: uri.to_string() })?;
+
+    let Some(host) = parsed_uri.host() else {
+        return Err(MirsError::UrlParsing { url: uri.to_string() })
+    };
+
+    let mut base_dir = dir
+        .join(host.to_string());
+
+    if let Some(path) = parsed_uri.path().strip_prefix('/') {
+        base_dir = base_dir.join(path);
+    }
+
+    Ok(base_dir)
 }

@@ -1,12 +1,16 @@
 use std::path::PathBuf;
 
-use clap::{command, arg, Parser, Subcommand, Args, ArgAction};
+use clap::{command, arg, Parser, ArgAction};
+use config::read_config;
+use error::MirsError;
+use indicatif::HumanBytes;
 
 use crate::error::Result;
 
 mod mirror;
 mod error;
 mod metadata;
+mod config;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -17,10 +21,20 @@ async fn main() -> Result<()> {
         None => std::env::current_dir()?
     };
 
-    if let Some(command) = cli.command {
-        match command {
-            Commands::Mirror(opts) => mirror::mirror(&opts, &output).await?
-        }
+    let opts = read_config(
+        &cli.config.expect("config should have a default value")
+    ).await?;
+
+    if opts.is_empty() {
+        return Err(MirsError::Config { msg: String::from("config file did not contain any valid repositories") })
+    }
+
+    for opt in opts {
+        println!("{} Mirroring {}", now(), &opt);
+
+        let downloaded_bytes = mirror::mirror(&opt, &output).await?;
+
+        println!("{} Mirroring done, {} downloaded", now(), HumanBytes(downloaded_bytes));
     }
 
     Ok(())
@@ -29,29 +43,16 @@ async fn main() -> Result<()> {
 #[derive(Parser)]
 #[command(author, version, about)]
 struct Cli {
-    #[arg(short, long, value_name = "CONFIG_FILE")]
+    #[arg(short, long, env, value_name = "CONFIG_FILE", default_value = "./mirror.list")]
     config: Option<PathBuf>,
     
-    #[arg(short, long, value_name = "OUTPUT")]
+    #[arg(short, long, env, value_name = "OUTPUT")]
     output: Option<PathBuf>,
 
     #[arg(short, long, action = ArgAction::Count)]
     verbose: u8,
-
-    #[command(subcommand)]
-    command: Option<Commands>,
-}   
-
-#[derive(Subcommand)]
-enum Commands {
-    Mirror(MirrorOpts)
 }
 
-#[derive(Args, Debug, Clone)]
-pub struct MirrorOpts {
-    uri: String,
-    distribution: String,
-    components: Vec<String>,
-    #[arg(short, long, value_name = "ARCH")]
-    arch: Option<Vec<String>>,
+fn now() -> String {
+    chrono::Local::now().to_rfc3339()
 }

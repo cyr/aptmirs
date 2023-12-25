@@ -1,8 +1,8 @@
-use std::{path::Path, collections::BTreeMap};
+use std::{path::{Path, Component}, collections::{BTreeMap, BTreeSet}};
 
 use tokio::{fs::File, io::{BufReader, AsyncBufReadExt}};
 
-use crate::error::{Result, MirsError};
+use crate::{error::{Result, MirsError}, config::MirrorOpts};
 
 #[derive(Debug)]
 pub struct Release {
@@ -15,11 +15,11 @@ impl Release {
         let file = File::open(path).await?;
         let file_size = file.metadata().await?.len();
 
-        let bufreader_capacity = if file_size < 1024*1024 { file_size } else { 1024*1024 } as usize;
-        let buf_capacity = if bufreader_capacity < 1024*8*8 { bufreader_capacity } else { 1024*8*8 };
+        let reader_capacity = file_size.min(1024*1024) as usize;
+        let buf_capacity = reader_capacity.min(1024*8*8);
 
         let mut buf = String::with_capacity(buf_capacity);
-        let mut reader = BufReader::with_capacity(bufreader_capacity, file);        
+        let mut reader = BufReader::with_capacity(reader_capacity, file);        
 
         let mut checksum_state = ChecksumState::No;
 
@@ -41,8 +41,8 @@ impl Release {
                 Line::FileEntry(v) => {
                     let file_line = FileLine::parse(v)?;
 
-                    if !files.contains_key(&file_line.path) {
-                        files.insert(file_line.path.clone(), 
+                    if !files.contains_key(file_line.path) {
+                        files.insert(file_line.path.to_string(), 
                             FileEntry { 
                                 size: file_line.size,
                                 md5: None,
@@ -53,13 +53,13 @@ impl Release {
                         );
                     }
 
-                    let entry = files.get_mut(&file_line.path).unwrap();
+                    let entry = files.get_mut(file_line.path).unwrap();
                         
                     match checksum_state {
-                        ChecksumState::Sha1   => entry.sha1 = Some(file_line.checksum),
-                        ChecksumState::Sha256 => entry.sha256 = Some(file_line.checksum),
-                        ChecksumState::Sha512 => entry.sha512 = Some(file_line.checksum),
-                        ChecksumState::Md5    => entry.md5 = Some(file_line.checksum),
+                        ChecksumState::Sha1   => entry.sha1 = Some(file_line.checksum.to_string()),
+                        ChecksumState::Sha256 => entry.sha256 = Some(file_line.checksum.to_string()),
+                        ChecksumState::Sha512 => entry.sha512 = Some(file_line.checksum.to_string()),
+                        ChecksumState::Md5    => entry.md5 = Some(file_line.checksum.to_string()),
                         ChecksumState::No     => return Err(MirsError::ParsingRelease { line: v.to_string() }),
                         _                     => continue
                     };
@@ -84,9 +84,9 @@ impl Release {
                 Line::Sha256Start              => checksum_state = ChecksumState::Sha256,
                 Line::Sha512Start              => checksum_state = ChecksumState::Sha512,
                 Line::UnknownChecksumStart     => checksum_state = ChecksumState::Unknown,
-                Line::PGPSignedMessageStart(_) => checksum_state = ChecksumState::PgpMessage,
-                Line::PGPSignatureStart(_)     => checksum_state = ChecksumState::PgpSignature,
-                Line::PGPSignatureEnd(_)       => checksum_state = ChecksumState::No,
+                Line::PGPSignedMessageStart    => checksum_state = ChecksumState::PgpMessage,
+                Line::PGPSignatureStart        => checksum_state = ChecksumState::PgpSignature,
+                Line::PGPSignatureEnd          => checksum_state = ChecksumState::No,
                 Line::UnknownLine(_)           => continue,
             }
         }
@@ -102,23 +102,119 @@ impl Release {
             .map(|v|v == "yes")
             .unwrap_or(false)
     }
+
+    pub fn into_filtered_files(self, opts: &MirrorOpts) -> ReleaseFileIterator {
+        ReleaseFileIterator::new(self, opts)
+    }
 }
 
-pub struct FileLine {
-    path: String, 
+pub struct ReleaseFileIterator<'a> {
+    release: Release,
+    opts: &'a MirrorOpts,
+    file_prefix_filter: Vec<String>,
+    dir_filter: BTreeSet<String>
+}
+
+impl<'a> ReleaseFileIterator<'a> {
+    pub fn new(release: Release, opts: &'a MirrorOpts) -> Self {
+        let mut file_prefix_filter = Vec::from([
+            String::from("Release"),
+            String::from("Contents-all"),
+            String::from("Components-all"),
+            String::from("Commands-all"),
+            String::from("Packages"),
+            String::from("icons"),
+            String::from("Translation"),
+            String::from("Sources"),
+            String::from("Index"),
+        ]);
+        
+        let mut dir_filter = BTreeSet::from([
+            String::from("dep11"),
+            String::from("i18n"),
+            String::from("binary-all"),
+            String::from("cnf"),
+            String::from("Contents-all.diff"),
+            String::from("Packages.diff"),
+        ]);
+
+        for arch in &opts.arch {
+            dir_filter.insert(format!("binary-{arch}"));
+            dir_filter.insert(format!("Contents-{arch}.diff"));
+            //dir_filter.insert(format!("Translation-{lang}.diff")); ?? Translation-en.diff
+
+            file_prefix_filter.push(format!("Components-{arch}"));
+            file_prefix_filter.push(format!("Contents-{arch}"));
+            file_prefix_filter.push(format!("Commands-{arch}"));
+        }
+
+        Self {
+            release,
+            opts,
+            file_prefix_filter,
+            dir_filter
+        }
+    }
+}
+
+impl<'a> Iterator for ReleaseFileIterator<'a> {
+    type Item = (String, FileEntry);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            match self.release.files.pop_first() {
+                Some((path, file_entry)) => {
+                    let p = Path::new(&path);
+
+                    let mut parts = p.components().peekable();
+
+                    let Some(Component::Normal(component)) = parts.next() else {
+                        continue
+                    };
+                    
+                    let component = component.to_str()
+                        .expect("path should be utf8");
+
+                    if !self.opts.components.iter().any(|v| v == component) {
+                        continue
+                    }
+
+                    while let Some(Component::Normal(part)) = parts.next() {
+                        let part_name = part.to_str()
+                            .expect("path should be utf8");
+
+                        if parts.peek().is_none() && 
+                            self.file_prefix_filter.iter().any(|v| part_name.starts_with(v)) {
+                            return Some((path, file_entry))
+                        } 
+
+                        if !self.dir_filter.contains(part_name) {
+                            break
+                        }
+                    }
+                },
+                None => return None
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct FileLine<'a> {
+    path: &'a str, 
     size: u64, 
-    checksum: String
+    checksum: &'a str
 }
 
-impl FileLine {
-    pub fn parse(value: &str) -> Result<Self> {
+impl<'a> FileLine<'a> {
+    pub fn parse(value: &'a str) -> Result<Self> {
         let mut v = &value[1..];
 
         // Read checksum part
         let checksum_end = v.find(' ')
             .ok_or_else(|| MirsError::ParsingRelease { line: value.to_string() })?;
 
-        let checksum = (v[..checksum_end]).to_string();
+        let checksum = &v[..checksum_end];
 
         v = &v[checksum_end..];
 
@@ -134,9 +230,9 @@ impl FileLine {
         let size = (v[..size_end]).parse()?;
 
         // Whatever is left is the path
-        let path = (v[size_end+1..]).to_string();
+        let path = &v[size_end+1..];
 
-        Ok(FileLine {
+        Ok(Self {
             path,
             size,
             checksum
@@ -177,9 +273,9 @@ pub enum Line<'a> {
     FileEntry(&'a str),
     Metadata(&'a str),
     UnknownLine(&'a str),
-    PGPSignedMessageStart(&'a str),
-    PGPSignatureStart(&'a str),
-    PGPSignatureEnd(&'a str)
+    PGPSignedMessageStart,
+    PGPSignatureStart,
+    PGPSignatureEnd
 }
 
 impl<'a> From<&'a str> for Line<'a> {
@@ -195,9 +291,9 @@ impl<'a> From<&'a str> for Line<'a> {
                     _         => Line::UnknownChecksumStart
                 }
             }
-            v if v == "-----BEGIN PGP SIGNED MESSAGE-----" => Line::PGPSignedMessageStart(v),
-            v if v == "-----BEGIN PGP SIGNATURE-----" => Line::PGPSignatureStart(v),
-            v if v == "-----END PGP SIGNATURE-----" => Line::PGPSignatureEnd(v),
+            "-----BEGIN PGP SIGNED MESSAGE-----" => Line::PGPSignedMessageStart,
+            "-----BEGIN PGP SIGNATURE-----" => Line::PGPSignatureStart,
+            "-----END PGP SIGNATURE-----" => Line::PGPSignatureEnd,
             v if v.contains(':') => Line::Metadata(v),
             v => Line::UnknownLine(v)
         }

@@ -11,7 +11,8 @@ pub struct Progress {
     step: Arc<AtomicU8>,
     step_name: Arc<Mutex<String>>,
     pub files: ProgressPart,
-    pub bytes: ProgressPart
+    pub bytes: ProgressPart,
+    pub total_bytes: u64,
 }
 
 impl Progress {
@@ -20,7 +21,8 @@ impl Progress {
             step_name: Arc::new(Mutex::new(String::new())),
             step: Arc::new(AtomicU8::new(0)),
             files: ProgressPart::new(),
-            bytes: ProgressPart::new()
+            bytes: ProgressPart::new(),
+            total_bytes: 0,
         }
     }
 
@@ -29,8 +31,21 @@ impl Progress {
             step_name: Arc::new(Mutex::new(step_name.to_string())),
             step: Arc::new(AtomicU8::new(step)),
             files: ProgressPart::new(),
-            bytes: ProgressPart::new()
+            bytes: ProgressPart::new(),
+            total_bytes: 0,
         }
+    }
+
+    pub async fn create_prefix_stepless(&self) -> String {
+        pad_str(
+            &style(format!(
+                "{}", 
+                self.step_name.lock().await)
+            ).bold().to_string(), 
+            26, 
+            console::Alignment::Right, 
+            None
+        ).to_string()
     }
 
     pub async fn create_prefix(&self) -> String {
@@ -47,15 +62,15 @@ impl Progress {
     }
 
     pub async fn create_processing_progress_bar(&self) -> ProgressBar {
-        let prefix = self.create_prefix().await;
+        let prefix = self.create_prefix_stepless().await;
 
-        ProgressBar::new(self.files.total())
+        ProgressBar::new(self.bytes.total())
             .with_style(
                 ProgressStyle::default_bar()
                     .template(
-                        "{prefix} [{wide_bar:.green/dim}] {pos}/{len}",
+                        "{prefix} [{wide_bar:.green/dim}] [{percent}%]",
                     )
-                    .expect("template is correct")
+                    .expect("template string should follow the syntax")
                     .progress_chars("###"),
             )
             .with_finish(ProgressFinish::AndLeave)
@@ -71,7 +86,7 @@ impl Progress {
                     .template(
                         "{prefix} [{wide_bar:.cyan/dim}] {pos}/{len} [{elapsed_precise}] [{msg}]",
                     )
-                    .expect("template is correct")
+                    .expect("template string should follow the syntax")
                     .progress_chars("###"),
                     
             )
@@ -79,9 +94,15 @@ impl Progress {
             .with_prefix(prefix)
     }
 
-    pub fn update_progress_bar(&self, progress_bar: &mut ProgressBar) {
+    pub fn update_for_files(&self, progress_bar: &mut ProgressBar) {
         progress_bar.set_length(self.files.total());
         progress_bar.set_position(self.files.success());
+        progress_bar.set_message(HumanBytes(self.bytes.success()).to_string());
+    }
+
+    pub fn update_for_bytes(&self, progress_bar: &mut ProgressBar) {
+        progress_bar.set_length(self.bytes.total());
+        progress_bar.set_position(self.bytes.success());
         progress_bar.set_message(HumanBytes(self.bytes.success()).to_string());
     }
 
@@ -94,13 +115,15 @@ impl Progress {
         self.step.fetch_add(1, Ordering::SeqCst);
     }
     
-    pub async fn wait_for_completion(&self, progress_bar: &mut ProgressBar)  {
+    pub async fn wait_for_completion(&mut self, progress_bar: &mut ProgressBar)  {
         while self.files.remaining() > 0 {
-            self.update_progress_bar(progress_bar);
+            self.update_for_files(progress_bar);
             sleep(Duration::from_millis(100)).await
         }
 
-        self.update_progress_bar(progress_bar);
+        self.total_bytes += self.bytes.success();
+
+        self.update_for_files(progress_bar);
 
         progress_bar.finish_using_style();
     }
@@ -128,6 +151,10 @@ impl ProgressPart {
 
     pub fn inc_success(&mut self, count: u64) {
         self.success.fetch_add(count, Ordering::SeqCst);
+    }
+
+    pub fn set_success(&mut self, count: u64) {
+        self.success.store(count, Ordering::SeqCst)
     }
 
     pub fn inc_skipped(&mut self, count: u64) {

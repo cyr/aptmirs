@@ -32,5 +32,11 @@ pub enum MirsError {
     InvalidRepository,
 
     #[error("unable to parse package file {path}")]
-    ParsingPackage { path: PathBuf }
+    ParsingPackage { path: PathBuf },
+
+    #[error("unable to parse url {url}")]
+    UrlParsing { url: String },
+
+    #[error("{msg}")]
+    Config { msg: String },
 }
