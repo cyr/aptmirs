@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
+use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 
@@ -7,6 +8,7 @@ use indicatif::MultiProgress;
 
 use crate::config::MirrorOpts;
 use crate::error::{Result, MirsError};
+use crate::metadata::checksum::Checksum;
 use crate::metadata::{package::Package, release::Release};
 use self::{progress::Progress, repository::Repository, downloader::{Downloader, Download}};
 
@@ -14,8 +16,8 @@ pub mod downloader;
 pub mod progress;
 pub mod repository;
 
-pub async fn mirror(opts: &MirrorOpts, output: &Path) -> Result<u64> {
-    let repo = Repository::build(&opts.uri, &opts.distribution, output)?;
+pub async fn mirror(opts: &MirrorOpts, output_dir: &Path) -> Result<u64> {
+    let repo = Repository::build(&opts.url, &opts.distribution, output_dir)?;
 
     let mut downloader = Downloader::build(8);
     let mut progress = downloader.progress();
@@ -24,21 +26,47 @@ pub async fn mirror(opts: &MirrorOpts, output: &Path) -> Result<u64> {
 
     progress.next_step("Downloading release").await;
 
-    let release = download_release(&repo, &mut downloader).await?;
+    let maybe_release = match download_release(&repo, &mut downloader).await {
+        Ok(release) => release,
+        Err(e) => {
+            _ = repo.delete_tmp();
+            return Err(MirsError::DownloadRelease { inner: Box::new(e) })
+        },
+    };
 
     total_downloaded_size += progress.bytes.success();
 
+    let Some(release) = maybe_release else {
+        _ = repo.delete_tmp();
+        eprintln!("{} Release file unchanged, nothing to do.", crate::now());
+        return Ok(total_downloaded_size)
+    };
+
     progress.next_step("Downloading indices").await;
 
-    let indices = download_indices(release, opts, &mut progress, &repo, &mut downloader).await?;
+    let indices = match download_indices(release, opts, &mut progress, &repo, &mut downloader).await {
+        Ok(indices) => indices,
+        Err(e) => {
+            _ = repo.delete_tmp();
+            return Err(MirsError::DownloadIndices { inner: Box::new(e) })
+        }
+    };
 
     total_downloaded_size += progress.bytes.success();
 
     progress.next_step("Downloading packages").await;
 
-    download_from_indices(&repo, &mut downloader, indices).await?;
+    if let Err(e) = download_from_indices(&repo, &mut downloader, indices).await {
+        _ = repo.delete_tmp();
+        return Err(MirsError::DownloadPackages { inner: Box::new(e) })
+    }
     
     total_downloaded_size += progress.bytes.success();
+
+    if let Err(e) = repo.finalize().await {
+        _ = repo.delete_tmp();
+        return Err(MirsError::Finalize { inner: Box::new(e) })
+    }
 
     Ok(total_downloaded_size)
 }
@@ -49,12 +77,31 @@ async fn download_indices(release: Release, opts: &MirrorOpts, progress: &mut Pr
     let by_hash = release.acquire_by_hash();
     
     for (path, file_entry) in release.into_filtered_files(opts) {
-        let download = repo.create_metadata_download(&path, file_entry, by_hash)?;
+        let url = repo.to_url_in_dist(&path);
+        let file_path = repo.to_path_in_tmp(&url);
+        
+        // since all files have their checksums verified on download, any file that is local can
+        // presumably be trusted to be correct. and since we only move in the package files on 
+        // a successful mirror operation, if we see the package file and its hash file, there is
+        // no need to queue its packages.
+        if let Some(checksum) = file_entry.strongest_hash() {
+            let by_hash_base = file_path
+                .parent()
+                .expect("all files needs a parent(?)")
+                .to_owned();
 
-        if is_package(&path) {
-            indices.push(repo.to_local_path(&repo.to_uri_in_dist(&path)));
+            let checksum_path = by_hash_base.join(checksum.relative_path());
+
+            if checksum_path.exists() && file_path.exists() {
+                continue
+            }
         }
 
+        if is_package(&path) {
+            indices.push(repo.to_path_in_tmp(&repo.to_url_in_dist(&path)));
+        }
+
+        let download = repo.create_metadata_download(url, file_path, file_entry, by_hash)?;
         downloader.queue(download).await?;
     }
 
@@ -106,9 +153,9 @@ pub async fn download_from_indices(repo: &Repository, downloader: &mut Downloade
         let package_size = package.size();
 
         for maybe_entry in package {
-            let (file_path, file_size) = maybe_entry?;
+            let (file_path, file_size, file_checksum) = maybe_entry?;
 
-            let dl = repo.create_file_download(&file_path, file_size);
+            let dl = repo.create_file_download(&file_path, file_size, file_checksum);
             downloader.queue(dl).await?;
             
             file_progress.bytes.set_success(counter.load(Ordering::SeqCst) + incremental_size_base);
@@ -126,7 +173,7 @@ pub async fn download_from_indices(repo: &Repository, downloader: &mut Downloade
     Ok(())
 }
 
-pub async fn download_release(repository: &Repository, downloader: &mut Downloader) -> Result<Release> {
+pub async fn download_release(repository: &Repository, downloader: &mut Downloader) -> Result<Option<Release>> {
     let mut files = Vec::with_capacity(3);
 
     let mut progress = downloader.progress();
@@ -134,16 +181,17 @@ pub async fn download_release(repository: &Repository, downloader: &mut Download
 
     let mut progress_bar = progress.create_download_progress_bar().await;
 
-    for file_uri in repository.release_files() {
-        let destination = repository.to_local_path(&file_uri);
+    for file_url in repository.release_urls() {
+        let destination = repository.to_path_in_tmp(&file_url);
 
-        let dl = Download {
+        let dl = Box::new(Download {
             primary_target_path: destination.clone(),
-            uri: file_uri,
+            url: file_url,
+            checksum: None,
             size: None,
             symlink_paths: Vec::new(),
             always_download: true
-        };
+        });
 
         let download_res = downloader.download(dl).await;
 
@@ -160,12 +208,27 @@ pub async fn download_release(repository: &Repository, downloader: &mut Download
     progress_bar.finish_using_style();
 
     let Some(release_file) = get_release_file(&files) else {
-        return Err(MirsError::InvalidRepository)
+        return Err(MirsError::NoReleaseFile)
     };
 
-    let release = Release::parse(release_file).await?;
+    // if the release file we already have has the same checksum as the one we downloaded, because
+    // of how all metadata files are moved into the repository path after the mirroring operation
+    // is completed successfully, there should be nothing more to do. save bandwidth, save lives!
+    if let Some(local_release_file) = repository.tmp_to_root(release_file) {
+        if local_release_file.exists() {
+            let tmp_checksum = Checksum::checksum_file(&local_release_file).await?;
+            let local_checksum = Checksum::checksum_file(&release_file).await?;
 
-    Ok(release)
+            if tmp_checksum == local_checksum {
+                return Ok(None)
+            }
+        }
+    }
+
+    let release = Release::parse(release_file).await
+        .map_err(|e| MirsError::InvalidReleaseFile { inner: Box::new(e) })?;
+
+    Ok(Some(release))
 }
 
 fn is_extension_preferred(old: Option<&OsStr>, new: Option<&OsStr>) -> bool {
@@ -188,12 +251,11 @@ fn is_package(path: &str) -> bool {
 
 fn get_release_file(files: &Vec<PathBuf>) -> Option<&PathBuf> {
     for file in files {
-        match file.file_name()
-            .expect("release files should be files")
-            .to_str().expect("file names should be valid utf8") {
-            "InRelease" |
-            "Release" => return Some(file),
-            _ => ()
+        let file_name = file.file_name()
+            .expect("release files should be files");
+
+        if let b"InRelease" | b"Release" = file_name.as_bytes() {
+            return Some(file)
         }
     }
 

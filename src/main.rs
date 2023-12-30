@@ -32,9 +32,10 @@ async fn main() -> Result<()> {
     for opt in opts {
         println!("{} Mirroring {}", now(), &opt);
 
-        let downloaded_bytes = mirror::mirror(&opt, &output).await?;
-
-        println!("{} Mirroring done, {} downloaded", now(), HumanBytes(downloaded_bytes));
+        match mirror::mirror(&opt, &output).await {
+            Ok(b)        => println!("{} Mirroring done, {} downloaded", now(), HumanBytes(b)),
+            Err(e) => println!("{} Mirroring failed: {e}", now())
+        }
     }
 
     Ok(())

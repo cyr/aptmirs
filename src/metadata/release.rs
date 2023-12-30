@@ -4,6 +4,8 @@ use tokio::{fs::File, io::{BufReader, AsyncBufReadExt}};
 
 use crate::{error::{Result, MirsError}, config::MirrorOpts};
 
+use super::checksum::Checksum;
+
 #[derive(Debug)]
 pub struct Release {
     map: BTreeMap<String, String>,
@@ -56,38 +58,51 @@ impl Release {
                     let entry = files.get_mut(file_line.path).unwrap();
                         
                     match checksum_state {
-                        ChecksumState::Sha1   => entry.sha1 = Some(file_line.checksum.to_string()),
-                        ChecksumState::Sha256 => entry.sha256 = Some(file_line.checksum.to_string()),
-                        ChecksumState::Sha512 => entry.sha512 = Some(file_line.checksum.to_string()),
-                        ChecksumState::Md5    => entry.md5 = Some(file_line.checksum.to_string()),
-                        ChecksumState::No     => return Err(MirsError::ParsingRelease { line: v.to_string() }),
-                        _                     => continue
+                        ChecksumState::Sha1 => {
+                            let mut checksum = [0_u8; 20];
+                            hex::decode_to_slice(file_line.checksum, &mut checksum)?;
+                            entry.sha1 = Some(checksum);
+                        },
+                        ChecksumState::Sha256 => {
+                            let mut checksum = [0_u8; 32];
+                            hex::decode_to_slice(file_line.checksum, &mut checksum)?;
+                            entry.sha256 = Some(checksum);
+                        },
+                        ChecksumState::Sha512 => {
+                            let mut checksum = [0_u8; 64];
+                            hex::decode_to_slice(file_line.checksum, &mut checksum)?;
+                            entry.sha512 = Some(checksum);
+                        },
+                        ChecksumState::Md5 => {
+                            let mut checksum = [0_u8; 16];
+                            hex::decode_to_slice(file_line.checksum, &mut checksum)?;
+                            entry.md5 = Some(checksum);
+                        },
+                        ChecksumState::No => return Err(MirsError::ParsingRelease { line: v.to_string() }),
+                        _ => continue
                     };
                 },
                 Line::Metadata(v) => {
-                    checksum_state = ChecksumState::No;
-
-                    match checksum_state {
-                        ChecksumState::PgpMessage | ChecksumState::PgpSignature => {
-                            continue
-                        },
-                        _ => ()
+                    if let ChecksumState::PgpMessage | ChecksumState::PgpSignature = checksum_state {
+                        continue
                     }
+
+                    checksum_state = ChecksumState::No;
 
                     let (k, v) = v.split_once(": ")
                         .ok_or_else(|| MirsError::ParsingRelease { line: v.to_string() })?;
 
                     map.insert(k.to_string(), v.to_string());
                 },
-                Line::Md5Start                 => checksum_state = ChecksumState::Md5,
-                Line::Sha1Start                => checksum_state = ChecksumState::Sha1,
-                Line::Sha256Start              => checksum_state = ChecksumState::Sha256,
-                Line::Sha512Start              => checksum_state = ChecksumState::Sha512,
-                Line::UnknownChecksumStart     => checksum_state = ChecksumState::Unknown,
-                Line::PGPSignedMessageStart    => checksum_state = ChecksumState::PgpMessage,
-                Line::PGPSignatureStart        => checksum_state = ChecksumState::PgpSignature,
-                Line::PGPSignatureEnd          => checksum_state = ChecksumState::No,
-                Line::UnknownLine(_)           => continue,
+                Line::Md5Start              => checksum_state = ChecksumState::Md5,
+                Line::Sha1Start             => checksum_state = ChecksumState::Sha1,
+                Line::Sha256Start           => checksum_state = ChecksumState::Sha256,
+                Line::Sha512Start           => checksum_state = ChecksumState::Sha512,
+                Line::UnknownChecksumStart  => checksum_state = ChecksumState::Unknown,
+                Line::PGPSignedMessageStart => checksum_state = ChecksumState::PgpMessage,
+                Line::PGPSignatureStart     => checksum_state = ChecksumState::PgpSignature,
+                Line::PGPSignatureEnd       => checksum_state = ChecksumState::No,
+                Line::Unknown(_)        => continue,
             }
         }
 
@@ -208,29 +223,18 @@ pub struct FileLine<'a> {
 
 impl<'a> FileLine<'a> {
     pub fn parse(value: &'a str) -> Result<Self> {
-        let mut v = &value[1..];
+        let mut parts = value.split_ascii_whitespace();
 
-        // Read checksum part
-        let checksum_end = v.find(' ')
-            .ok_or_else(|| MirsError::ParsingRelease { line: value.to_string() })?;
+        let checksum = parts.next()
+            .ok_or(MirsError::ParsingRelease { line: value.to_string() })?;
 
-        let checksum = &v[..checksum_end];
+        let size = parts.next()
+            .ok_or(MirsError::ParsingRelease { line: value.to_string() })?
+            .parse()
+            .map_err(|_| MirsError::ParsingRelease { line: value.to_string() })?;
 
-        v = &v[checksum_end..];
-
-        // Skip until file size
-        while let Some(0) = v.find(' ') {
-            v = &v[1..];
-        }
-
-        // Read file size
-        let size_end = v.find(' ')
-            .ok_or_else(|| MirsError::ParsingRelease { line: value.to_string() })?;
-
-        let size = (v[..size_end]).parse()?;
-
-        // Whatever is left is the path
-        let path = &v[size_end+1..];
+        let path = parts.next()
+            .ok_or(MirsError::ParsingRelease { line: value.to_string() })?;
 
         Ok(Self {
             path,
@@ -272,7 +276,7 @@ pub enum Line<'a> {
     UnknownChecksumStart,
     FileEntry(&'a str),
     Metadata(&'a str),
-    UnknownLine(&'a str),
+    Unknown(&'a str),
     PGPSignedMessageStart,
     PGPSignatureStart,
     PGPSignatureEnd
@@ -292,29 +296,21 @@ impl<'a> From<&'a str> for Line<'a> {
                 }
             }
             "-----BEGIN PGP SIGNED MESSAGE-----" => Line::PGPSignedMessageStart,
-            "-----BEGIN PGP SIGNATURE-----" => Line::PGPSignatureStart,
-            "-----END PGP SIGNATURE-----" => Line::PGPSignatureEnd,
-            v if v.contains(':') => Line::Metadata(v),
-            v => Line::UnknownLine(v)
+            "-----BEGIN PGP SIGNATURE-----"      => Line::PGPSignatureStart,
+            "-----END PGP SIGNATURE-----"        => Line::PGPSignatureEnd,
+            v if v.contains(':')           => Line::Metadata(v),
+            v                              => Line::Unknown(v)
         }
     }
-}
-
-#[derive(Debug)]
-pub enum Checksum {
-    Md5(String),
-    Sha1(String),
-    Sha256(String),
-    Sha512(String)
 }
 
 impl Checksum {
     pub fn relative_path(&self) -> String {
         match self {
-            Checksum::Md5(checksum)    => format!("by-hash/MD5Sum/{checksum}"),
-            Checksum::Sha1(checksum)   => format!("by-hash/SHA1/{checksum}"),
-            Checksum::Sha256(checksum) => format!("by-hash/SHA256/{checksum}"),
-            Checksum::Sha512(checksum) => format!("by-hash/SHA512/{checksum}"),
+            Checksum::Md5(checksum)    => format!("by-hash/MD5Sum/{}", hex::encode(checksum)),
+            Checksum::Sha1(checksum)   => format!("by-hash/SHA1/{}",   hex::encode(checksum)),
+            Checksum::Sha256(checksum) => format!("by-hash/SHA256/{}", hex::encode(checksum)),
+            Checksum::Sha512(checksum) => format!("by-hash/SHA512/{}", hex::encode(checksum)),
         }
     }
 }
@@ -322,10 +318,26 @@ impl Checksum {
 #[derive(Debug)]
 pub struct FileEntry {
     pub size: u64,
-    pub md5: Option<String>,
-    pub sha1: Option<String>,
-    pub sha256: Option<String>,
-    pub sha512: Option<String>
+    pub md5: Option<[u8; 16]>,
+    pub sha1: Option<[u8; 20]>,
+    pub sha256: Option<[u8; 32]>,
+    pub sha512: Option<[u8; 64]>
+}
+
+impl FileEntry {
+    pub fn strongest_hash(&self) -> Option<Checksum> {
+        if let Some(hash) = self.sha512 {
+            Some(hash.into())
+        } else if let Some(hash) = self.sha256 {
+            Some(hash.into())
+        } else if let Some(hash) = self.sha1 {
+            Some(hash.into())
+        } else if let Some(hash) = self.md5 {
+            Some(hash.into())
+        } else {
+            None
+        }
+    }
 }
 
 impl IntoIterator for FileEntry {

@@ -5,12 +5,12 @@ use async_channel::{bounded, Sender, Receiver};
 use reqwest::{Client, StatusCode};
 use tokio::{task::JoinHandle, io::AsyncWriteExt, fs::symlink};
 
-use crate::error::{Result, MirsError};
+use crate::{error::{Result, MirsError}, metadata::checksum::Checksum};
 
 use super::progress::Progress;
 
 pub struct Downloader {
-    sender: Sender<Download>,
+    sender: Sender<Box<Download>>,
     _tasks: Vec<JoinHandle<()>>,
     progress: Progress,
     http_client: Client
@@ -27,7 +27,7 @@ impl Downloader {
         let http_client = reqwest::Client::new();
 
         for _ in 0..num_threads {
-            let task_receiver: Receiver<Download> = receiver.clone();
+            let task_receiver: Receiver<Box<Download>> = receiver.clone();
 
             let mut task_progress = progress.clone();
 
@@ -67,7 +67,7 @@ impl Downloader {
         }
     }
 
-    pub async fn queue(&mut self, download_entry: Download) -> Result<()> {
+    pub async fn queue(&mut self, download_entry: Box<Download>) -> Result<()> {
         if let Some(size) = download_entry.size {
             self.progress.bytes.inc_total(size);
         }
@@ -79,7 +79,7 @@ impl Downloader {
         Ok(())
     }
 
-    pub async fn download(&mut self, download: Download) -> Result<()> {
+    pub async fn download(&mut self, download: Box<Download>) -> Result<()> {
         if let Err(e) = download_file(&mut self.http_client, download, |bytes| {
             self.progress.bytes.inc_success(bytes)
         }).await {
@@ -98,7 +98,7 @@ impl Downloader {
     }
 }
 
-async fn download_file<F>(http_client: &mut Client, download: Download, mut progress_callback: F) -> Result<()>
+async fn download_file<F>(http_client: &mut Client, download: Box<Download>, mut progress_cb: F) -> Result<()>
     where F: FnMut(u64) {
     if needs_downloading(&download) {
         create_dirs(&download.primary_target_path).await?;
@@ -106,16 +106,39 @@ async fn download_file<F>(http_client: &mut Client, download: Download, mut prog
         let mut output = tokio::fs::File::create(&download.primary_target_path).await?;
 
         if download.size.is_some_and(|v| v > 0) || download.size.is_none() {
-            let mut response = http_client.get(&download.uri).send().await?;
+            let mut response = http_client.get(&download.url).send().await?;
 
             if response.status() == StatusCode::NOT_FOUND {
-                return Err(MirsError::Download { uri: download.uri.clone(), status_code: response.status() })
+                return Err(MirsError::Download { url: download.url.clone(), status_code: response.status() })
             }
 
-            while let Some(chunk) = response.chunk().await? {
-                output.write_all(&chunk).await?;
-        
-                progress_callback(chunk.len() as u64);
+            if let Some(expected_checksum) = download.checksum {
+                let mut hasher = expected_checksum.create_hasher();
+
+                while let Some(chunk) = response.chunk().await? {
+                    output.write_all(&chunk).await?;
+                    hasher.consume(&chunk);
+            
+                    progress_cb(chunk.len() as u64);
+                }
+
+                let checksum = hasher.compute();
+
+                if expected_checksum != checksum {
+                    drop(output);
+                    tokio::fs::remove_file(&download.primary_target_path).await?;
+                    return Err(MirsError::Checksum { 
+                        url: download.url, 
+                        expected: expected_checksum.to_string(), 
+                        hash: checksum.to_string() 
+                    })
+                }
+            } else {
+                while let Some(chunk) = response.chunk().await? {
+                    output.write_all(&chunk).await?;
+            
+                    progress_cb(chunk.len() as u64);
+                }
             }
         
             output.flush().await?;
@@ -168,8 +191,9 @@ fn needs_downloading(dl: &Download) -> bool {
 
 #[derive(Debug)]
 pub struct Download {
-    pub uri: String,
+    pub url: String,
     pub size: Option<u64>,
+    pub checksum: Option<Checksum>,
     pub primary_target_path: PathBuf,
     pub symlink_paths: Vec<PathBuf>,
     pub always_download: bool

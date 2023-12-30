@@ -71,7 +71,7 @@ fn merge_similar(mut mirrors: Vec<MirrorOpts>) -> Vec<MirrorOpts> {
 
 #[derive(Eq)]
 pub struct MirrorOpts {
-    pub uri: String,
+    pub url: String,
     pub distribution: String,
     pub components: Vec<String>,
     pub arch: Vec<String>,
@@ -80,7 +80,7 @@ pub struct MirrorOpts {
 
 impl Ord for MirrorOpts {
     fn cmp(&self, other: &Self) -> Ordering {
-        match self.uri.cmp(&other.uri) {
+        match self.url.cmp(&other.url) {
             Ordering::Equal => {},
             ord => return ord
         }
@@ -96,7 +96,7 @@ impl Ord for MirrorOpts {
 
 impl PartialEq for MirrorOpts {
     fn eq(&self, other: &Self) -> bool {
-        self.uri == other.uri && self.distribution == other.distribution && self.arch == other.arch
+        self.url == other.url && self.distribution == other.distribution && self.arch == other.arch
     }
 }
 
@@ -110,8 +110,8 @@ impl Display for MirrorOpts {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(
             format_args!(
-                "{} for dist: {}[{}], components: {}",
-                self.uri,
+                "{} {}[{}] {}",
+                self.url,
                 self.distribution,
                 self.arch.join(", "),
                 self.components.join(" ")
@@ -163,8 +163,8 @@ impl MirrorOpts {
 
         let mut line_parts = line.split_whitespace();
 
-        let Some(uri) = line_parts.next() else {
-            return Err(MirsError::Config { msg: String::from("no uri specified") })
+        let Some(url) = line_parts.next() else {
+            return Err(MirsError::Config { msg: String::from("no url specified") })
         };
 
         let Some(distribution) = line_parts.next() else {
@@ -184,7 +184,7 @@ impl MirrorOpts {
         }
 
         Ok(Self {
-            uri: uri.to_owned(),
+            url: url.to_owned(),
             distribution: distribution.to_owned(),
             components,
             arch

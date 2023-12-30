@@ -1,6 +1,8 @@
-use std::{path::Path, fs::File, io::{BufReader, BufRead, Read}, sync::{atomic::{AtomicU64, Ordering}, Arc}};
+use std::{path::{Path, PathBuf}, fs::File, io::{BufReader, BufRead, Read}, sync::{atomic::{AtomicU64, Ordering}, Arc}};
 
 use crate::error::{Result, MirsError};
+
+use super::checksum::{Checksum, ChecksumType};
 
 pub struct TrackingReader<R: Read> {
     inner: R,
@@ -9,18 +11,19 @@ pub struct TrackingReader<R: Read> {
 
 impl<R: Read> Read for TrackingReader<R> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        match self.inner.read(buf) {
-            Ok(read) => {
-                self.read.fetch_add(read as u64, Ordering::SeqCst);
-                Ok(read)
-            },
-            Err(e) => Err(e),
+        let result = self.inner.read(buf);
+
+        if let Ok(read) = result {
+            self.read.fetch_add(read as u64, Ordering::SeqCst);
         }
+
+        result
     }
 }
 
 pub struct Package {
     reader: Box<dyn BufRead>,
+    path: PathBuf,
     buf: String,
     size: u64,
     read: Arc<AtomicU64>
@@ -43,7 +46,7 @@ impl Package {
                 v.to_str().expect("extension must be valid ascii")
             ) {
             Some("xz") => {
-                let xz_decoder = xz2::read::XzDecoder::new(file_reader);
+                let xz_decoder = xz2::read::XzDecoder::new_multi_decoder(file_reader);
                 Box::new(BufReader::with_capacity(1024*1024, xz_decoder))
             }
             Some("gz") => {
@@ -62,6 +65,7 @@ impl Package {
 
         Ok(Self {
             reader,
+            path: path.to_path_buf(),
             buf: String::with_capacity(1024*8),
             size,
             read: counter,
@@ -78,50 +82,76 @@ impl Package {
 }
 
 impl Iterator for Package {
-    type Item = Result<(String, u64)>;
+    type Item = Result<(String, u64, Option<Checksum>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut path = None;
-        let mut size = None;
-
         loop {
             match self.reader.read_line(&mut self.buf) {
-                Ok(_) if self.buf.starts_with("Filename: ") => 
-                    path = Some(
-                        String::from(
-                            self.buf.strip_prefix("Filename: ")
-                                .expect("prefix is guaranteed to be here")
-                                .trim()
-                        )
-                    ),
-                Ok(_) if self.buf.starts_with("Size: ") => {
-                    let value = self.buf.strip_prefix("Size: ")
-                        .expect("prefix is guaranteed to be here!")
-                        .trim();
-
-                    let value = value.parse()
-                        .expect("value of Size should be an integer");
-
-                    size = Some(value)
-                },
                 Ok(0) => return None,
-                Ok(_) => (),
-                Err(e) => {
-                    return Some(Err(MirsError::Io(e)))
+                Ok(len) => {
+                    if len == 1 {
+                        break
+                    }
                 }
-            };
-
-            self.buf.clear();
-
-            if path.is_some() && size.is_some() {
-                break
+                Err(e) => return Some(Err(
+                    MirsError::ReadingPackage { 
+                        path: self.path.to_string_lossy().to_string(), 
+                        inner: Box::new(e.into()) 
+                    }
+                ))
             }
         }
 
-        if let (Some(p), Some(s)) = (path, size) {
-            return Some(Ok((p, s)))
+        let mut path = None;
+        let mut size = None;
+        let mut hash = None;
+
+        for line in self.buf.lines() {
+            if let Some(filename) = line.strip_prefix("Filename: ") {
+                path = Some(filename.to_string())
+            } else if let Some(line_size) = line.strip_prefix("Size: ") {
+                size = Some(line_size.parse().expect("value of Size should be an integer"))
+            } else if let Some(line_hash) = line.strip_prefix("MD5Sum: ") {
+                if ChecksumType::is_stronger(&hash, ChecksumType::Md5) {
+                    let mut md5 = [0_u8; 16];
+                    if let Err(e) = hex::decode_to_slice(line_hash, &mut md5) {
+                        return Some(Err(e.into()))
+                    }   
+                    hash = Some(Checksum::Md5(md5))
+                }
+            } else if let Some(line_hash) = line.strip_prefix("SHA1: ") {
+                if ChecksumType::is_stronger(&hash, ChecksumType::Sha1) {
+                    let mut sha1 = [0_u8; 20];
+                    if let Err(e) = hex::decode_to_slice(line_hash, &mut sha1) {
+                        return Some(Err(e.into()))
+                    }
+                    hash = Some(Checksum::Sha1(sha1))
+                }
+            } else if let Some(line_hash) = line.strip_prefix("SHA256: ") {
+                if ChecksumType::is_stronger(&hash, ChecksumType::Sha256) {
+                    let mut sha256 = [0_u8; 32];
+                    if let Err(e) = hex::decode_to_slice(line_hash, &mut sha256) {
+                        return Some(Err(e.into()))
+                    }
+                    hash = Some(Checksum::Sha256(sha256))
+                }
+            } else if let Some(line_hash) = line.strip_prefix("SHA512: ") {
+                if ChecksumType::is_stronger(&hash, ChecksumType::Sha512) {
+                    let mut sha512 = [0_u8; 64];
+                    if let Err(e) = hex::decode_to_slice(line_hash, &mut sha512) {
+                        return Some(Err(e.into()))
+                    }
+                    hash = Some(Checksum::Sha512(sha512))
+                }
+            }
         }
 
-        None
+        self.buf.clear();
+
+        if let (Some(p), Some(s), h) = (path, size, hash) {
+            Some(Ok((p, s, h)))
+        } else {
+            None
+        }
     }
 }
