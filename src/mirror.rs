@@ -17,7 +17,7 @@ pub mod progress;
 pub mod repository;
 
 pub async fn mirror(opts: &MirrorOpts, output_dir: &Path) -> Result<u64> {
-    let repo = Repository::build(&opts.url, &opts.distribution, output_dir)?;
+    let repo = Repository::build(&opts.url, &opts.suite, output_dir)?;
 
     let mut downloader = Downloader::build(8);
     let mut progress = downloader.progress();

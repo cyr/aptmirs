@@ -72,7 +72,7 @@ fn merge_similar(mut mirrors: Vec<MirrorOpts>) -> Vec<MirrorOpts> {
 #[derive(Eq)]
 pub struct MirrorOpts {
     pub url: String,
-    pub distribution: String,
+    pub suite: String,
     pub components: Vec<String>,
     pub arch: Vec<String>,
 }
@@ -85,7 +85,7 @@ impl Ord for MirrorOpts {
             ord => return ord
         }
 
-        match self.distribution.cmp(&other.distribution) {
+        match self.suite.cmp(&other.suite) {
             Ordering::Equal => {}
             ord => return ord
         }
@@ -96,7 +96,7 @@ impl Ord for MirrorOpts {
 
 impl PartialEq for MirrorOpts {
     fn eq(&self, other: &Self) -> bool {
-        self.url == other.url && self.distribution == other.distribution && self.arch == other.arch
+        self.url == other.url && self.suite == other.suite && self.arch == other.arch
     }
 }
 
@@ -112,7 +112,7 @@ impl Display for MirrorOpts {
             format_args!(
                 "{} {}[{}] {}",
                 self.url,
-                self.distribution,
+                self.suite,
                 self.arch.join(", "),
                 self.components.join(" ")
             )
@@ -167,8 +167,8 @@ impl MirrorOpts {
             return Err(MirsError::Config { msg: String::from("no url specified") })
         };
 
-        let Some(distribution) = line_parts.next() else {
-            return Err(MirsError::Config { msg: String::from("no distribution specified") })
+        let Some(suite) = line_parts.next() else {
+            return Err(MirsError::Config { msg: String::from("no suite specified") })
         };
 
         let components = line_parts
@@ -185,7 +185,7 @@ impl MirrorOpts {
 
         Ok(Self {
             url: url.to_owned(),
-            distribution: distribution.to_owned(),
+            suite: suite.to_owned(),
             components,
             arch
         })

@@ -14,20 +14,20 @@ pub struct Repository {
 }
 
 impl Repository {
-    pub fn build(archive_root: &str, dist: &str, base_dir: &Path) -> Result<Self> {
+    pub fn build(archive_root: &str, suite: &str, base_dir: &Path) -> Result<Self> {
         let root_url = match archive_root.strip_prefix('/') {
             Some(url) => url.to_string(),
             None => archive_root.to_string(),
         };
 
-        let dist_url = format!("{root_url}/dists/{dist}");
+        let dist_url = format!("{root_url}/dists/{suite}");
 
         let parsed_url = Url::parse(&root_url)
             .map_err(|_| MirsError::UrlParsing { url: root_url.to_string() })?;
 
         let root_dir = local_dir_from_archive_url(&parsed_url, base_dir)?;
 
-        let tmp_dir = create_tmp_dir(&parsed_url, dist, base_dir)?;
+        let tmp_dir = create_tmp_dir(&parsed_url, suite, base_dir)?;
 
         Ok(Self {
             root_url,
@@ -157,7 +157,7 @@ impl Repository {
 }
 
 
-fn create_tmp_dir(url: &Url, dist: &str, base_dir: &Path) -> Result<PathBuf> {
+fn create_tmp_dir(url: &Url, suite: &str, base_dir: &Path) -> Result<PathBuf> {
     let Some(host) = url.host() else {
         return Err(MirsError::UrlParsing { url: url.to_string() })
     };
@@ -172,7 +172,7 @@ fn create_tmp_dir(url: &Url, dist: &str, base_dir: &Path) -> Result<PathBuf> {
 
     let tmp_dir = base_dir
         .join(".tmp")
-        .join(format!("{host}{path_part}_{dist}"));
+        .join(format!("{host}{path_part}_{suite}"));
 
     match std::fs::metadata(&tmp_dir) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
