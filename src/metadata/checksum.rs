@@ -75,7 +75,7 @@ impl Checksum {
             }
         }
 
-        Ok(hasher.compute().into())
+        Ok(hasher.compute())
     }
 }
 

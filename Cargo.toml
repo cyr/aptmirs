@@ -8,7 +8,7 @@ edition = "2021"
 
 [dependencies]
 async-channel = "2.1.1"
-bzip2 = { version = "0.4.4", features = ["tokio"] }
+bzip2 = "0.4.4"
 chrono = "0.4.31"
 clap = { version = "4.4.11", features = ["cargo", "derive", "env"] }
 console = "0.15.7"
@@ -18,12 +18,12 @@ indicatif = "0.17.7"
 md5 = "0.7.0"
 pathdiff = "0.2.1"
 regex = "1.10.2"
-reqwest = { version = "0.11.23", features = ["rustls-native-certs"] }
+reqwest = { version = "0.11.23", features = ["rustls", "rustls-native-certs"] }
 sha1 = "0.10.6"
 sha2 = "0.10.8"
 thiserror = "1.0.52"
 tokio = { version = "1.35.1", features = ["macros", "rt-multi-thread", "fs"] }
-xz2 = { version = "0.1.7", features = ["tokio"] }
+xz2 = "0.1.7"
 
 [profile.release]
 codegen-units = 1

@@ -39,8 +39,18 @@ pub async fn mirror(opts: &MirrorOpts, output_dir: &Path) -> Result<u64> {
     let Some(release) = maybe_release else {
         _ = repo.delete_tmp();
         eprintln!("{} Release file unchanged, nothing to do.", crate::now());
-        return Ok(total_downloaded_size)
+        return Ok(0)
     };
+
+    if let Some(release_components) = release.components() {
+        let components = release_components.split_ascii_whitespace().collect::<Vec<&str>>();
+
+        for requested_component in &opts.components {
+            if !components.contains(&requested_component.as_str()) {
+                println!("{} WARNING: {requested_component} is not in this repo", crate::now());
+            }
+        }
+    }
 
     progress.next_step("Downloading indices").await;
 
@@ -60,13 +70,13 @@ pub async fn mirror(opts: &MirrorOpts, output_dir: &Path) -> Result<u64> {
         _ = repo.delete_tmp();
         return Err(MirsError::DownloadPackages { inner: Box::new(e) })
     }
-    
-    total_downloaded_size += progress.bytes.success();
 
     if let Err(e) = repo.finalize().await {
         _ = repo.delete_tmp();
         return Err(MirsError::Finalize { inner: Box::new(e) })
     }
+
+    total_downloaded_size += progress.bytes.success();
 
     Ok(total_downloaded_size)
 }
@@ -217,7 +227,7 @@ pub async fn download_release(repository: &Repository, downloader: &mut Download
     if let Some(local_release_file) = repository.tmp_to_root(release_file) {
         if local_release_file.exists() {
             let tmp_checksum = Checksum::checksum_file(&local_release_file).await?;
-            let local_checksum = Checksum::checksum_file(&release_file).await?;
+            let local_checksum = Checksum::checksum_file(release_file).await?;
 
             if tmp_checksum == local_checksum {
                 return Ok(None)

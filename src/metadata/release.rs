@@ -98,11 +98,10 @@ impl Release {
                 Line::Sha1Start             => checksum_state = ChecksumState::Sha1,
                 Line::Sha256Start           => checksum_state = ChecksumState::Sha256,
                 Line::Sha512Start           => checksum_state = ChecksumState::Sha512,
-                Line::UnknownChecksumStart  => checksum_state = ChecksumState::Unknown,
                 Line::PGPSignedMessageStart => checksum_state = ChecksumState::PgpMessage,
                 Line::PGPSignatureStart     => checksum_state = ChecksumState::PgpSignature,
                 Line::PGPSignatureEnd       => checksum_state = ChecksumState::No,
-                Line::Unknown(_)        => continue,
+                Line::Unknown(_)            => continue,
             }
         }
 
@@ -116,6 +115,10 @@ impl Release {
         self.map.get("Acquire-By-Hash")
             .map(|v|v == "yes")
             .unwrap_or(false)
+    }
+
+    pub fn components(&self) -> Option<&String> {
+        self.map.get("Components")
     }
 
     pub fn into_filtered_files(self, opts: &MirrorOpts) -> ReleaseFileIterator {
@@ -226,15 +229,15 @@ impl<'a> FileLine<'a> {
         let mut parts = value.split_ascii_whitespace();
 
         let checksum = parts.next()
-            .ok_or(MirsError::ParsingRelease { line: value.to_string() })?;
+            .ok_or_else(|| MirsError::ParsingRelease { line: value.to_string() })?;
 
         let size = parts.next()
-            .ok_or(MirsError::ParsingRelease { line: value.to_string() })?
+            .ok_or_else(|| MirsError::ParsingRelease { line: value.to_string() })?
             .parse()
             .map_err(|_| MirsError::ParsingRelease { line: value.to_string() })?;
 
         let path = parts.next()
-            .ok_or(MirsError::ParsingRelease { line: value.to_string() })?;
+            .ok_or_else(|| MirsError::ParsingRelease { line: value.to_string() })?;
 
         Ok(Self {
             path,
@@ -273,7 +276,6 @@ pub enum Line<'a> {
     Sha1Start,
     Sha256Start,
     Sha512Start,
-    UnknownChecksumStart,
     FileEntry(&'a str),
     Metadata(&'a str),
     Unknown(&'a str),
@@ -285,16 +287,11 @@ pub enum Line<'a> {
 impl<'a> From<&'a str> for Line<'a> {
     fn from(value: &'a str) -> Self {
         match value {
-            v if v.starts_with(' ') => Line::FileEntry(v),
-            v if v.ends_with(':') => {
-                match v {
-                    "MD5Sum:" => Line::Md5Start,
-                    "SHA1:"   => Line::Sha1Start,
-                    "SHA256:" => Line::Sha256Start,
-                    "SHA512:" => Line::Sha512Start,
-                    _         => Line::UnknownChecksumStart
-                }
-            }
+            v if v.starts_with(' ')        => Line::FileEntry(v),
+            "MD5Sum:"                            => Line::Md5Start,
+            "SHA1:"                              => Line::Sha1Start,
+            "SHA256:"                            => Line::Sha256Start,
+            "SHA512:"                            => Line::Sha512Start,
             "-----BEGIN PGP SIGNED MESSAGE-----" => Line::PGPSignedMessageStart,
             "-----BEGIN PGP SIGNATURE-----"      => Line::PGPSignatureStart,
             "-----END PGP SIGNATURE-----"        => Line::PGPSignatureEnd,
@@ -332,10 +329,8 @@ impl FileEntry {
             Some(hash.into())
         } else if let Some(hash) = self.sha1 {
             Some(hash.into())
-        } else if let Some(hash) = self.md5 {
-            Some(hash.into())
         } else {
-            None
+            self.md5.map(|v| v.into())
         }
     }
 }
