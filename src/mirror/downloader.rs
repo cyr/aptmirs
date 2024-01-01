@@ -94,7 +94,6 @@ impl Downloader {
                     self.progress.files.inc_success(1);
                 } else {
                     self.progress.files.inc_skipped(1);
-
                 }
             },
             Err(e) => {
