@@ -1,10 +1,11 @@
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
+use std::fmt::Display;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 
-use indicatif::MultiProgress;
+use indicatif::{MultiProgress, HumanBytes};
 
 use crate::config::MirrorOpts;
 use crate::error::{Result, MirsError};
@@ -16,36 +17,53 @@ pub mod downloader;
 pub mod progress;
 pub mod repository;
 
-pub struct MirrorResult {
-    pub total_downloaded_size: u64,
-    pub num_packages: u64,
-    pub packages_size: u64
+pub enum MirrorResult {
+    NewRelease { total_download_size: u64, num_packages_downloaded: u64, packages_size: u64 },
+    ReleaseUnchanged,
+    IrrelevantChanges
 }
 
-pub async fn mirror(opts: &MirrorOpts, output_dir: &Path) -> Result<Option<MirrorResult>> {
+impl Display for MirrorResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MirrorResult::NewRelease { total_download_size, num_packages_downloaded, packages_size } =>
+                f.write_fmt(format_args!(
+                    "{} downloaded, {} packages ({})", 
+                    HumanBytes(*total_download_size),
+                    num_packages_downloaded,
+                    HumanBytes(*packages_size), 
+                )),
+            MirrorResult::ReleaseUnchanged =>
+                f.write_str("release unchanged"),
+            MirrorResult::IrrelevantChanges =>
+                f.write_str("new release, but changes do not apply to configured selections")
+        }
+    }
+}
+
+pub async fn mirror(opts: &MirrorOpts, output_dir: &Path) -> Result<MirrorResult> {
     let repo = Repository::build(&opts.url, &opts.suite, output_dir)?;
 
     let mut downloader = Downloader::build(8);
     let mut progress = downloader.progress();
 
-    let mut total_downloaded_size = 0_u64;
+    let mut total_download_size = 0_u64;
 
     progress.next_step("Downloading release").await;
 
-    let maybe_release = match download_release(&repo, &mut downloader).await {
-        Ok(release) => release,
+    let release = match download_release(&repo, &mut downloader).await {
+        Ok(Some(release)) => release,
+        Ok(None) => {
+            _ = repo.delete_tmp();
+            return Ok(MirrorResult::ReleaseUnchanged)
+        }
         Err(e) => {
             _ = repo.delete_tmp();
             return Err(MirsError::DownloadRelease { inner: Box::new(e) })
         },
     };
 
-    total_downloaded_size += progress.bytes.success();
-
-    let Some(release) = maybe_release else {
-        _ = repo.delete_tmp();
-        return Ok(None)
-    };
+    total_download_size += progress.bytes.success();
 
     if let Some(release_components) = release.components() {
         let components = release_components.split_ascii_whitespace().collect::<Vec<&str>>();
@@ -60,14 +78,18 @@ pub async fn mirror(opts: &MirrorOpts, output_dir: &Path) -> Result<Option<Mirro
     progress.next_step("Downloading indices").await;
 
     let indices = match download_indices(release, opts, &mut progress, &repo, &mut downloader).await {
-        Ok(indices) => indices,
+        Ok(Some(indices)) => indices,
+        Ok(None) => {
+            repo.finalize().await?;
+            return Ok(MirrorResult::IrrelevantChanges)
+        }
         Err(e) => {
             _ = repo.delete_tmp();
             return Err(MirsError::DownloadIndices { inner: Box::new(e) })
         }
     };
 
-    total_downloaded_size += progress.bytes.success();
+    total_download_size += progress.bytes.success();
 
     progress.next_step("Downloading packages").await;
 
@@ -77,23 +99,23 @@ pub async fn mirror(opts: &MirrorOpts, output_dir: &Path) -> Result<Option<Mirro
     }
 
     let packages_size = progress.bytes.success();
-    let num_packages = progress.files.success();
+    let num_packages_downloaded = progress.files.success();
 
     if let Err(e) = repo.finalize().await {
         _ = repo.delete_tmp();
         return Err(MirsError::Finalize { inner: Box::new(e) })
     }
 
-    total_downloaded_size += packages_size;
+    total_download_size += packages_size;
 
-    Ok(Some(MirrorResult {
-        total_downloaded_size,
-        packages_size,
-        num_packages
-    }))
+    Ok(MirrorResult::NewRelease {
+        total_download_size,
+        num_packages_downloaded,
+        packages_size
+    })
 }
 
-async fn download_indices(release: Release, opts: &MirrorOpts, progress: &mut Progress, repo: &Repository, downloader: &mut Downloader) -> Result<Vec<PathBuf>> {
+async fn download_indices(release: Release, opts: &MirrorOpts, progress: &mut Progress, repo: &Repository, downloader: &mut Downloader) -> Result<Option<Vec<PathBuf>>> {
     let mut indices = Vec::new();
 
     let by_hash = release.acquire_by_hash();
@@ -130,7 +152,11 @@ async fn download_indices(release: Release, opts: &MirrorOpts, progress: &mut Pr
     let mut progress_bar = progress.create_download_progress_bar().await;
     progress.wait_for_completion(&mut progress_bar).await;
 
-    Ok(indices)
+    if !indices.is_empty() {
+        Ok(Some(indices))    
+    } else {
+        Ok(None)
+    }
 }
 
 pub async fn download_from_indices(repo: &Repository, downloader: &mut Downloader, indices: Vec<PathBuf>) -> Result<()> {
@@ -236,7 +262,7 @@ pub async fn download_release(repository: &Repository, downloader: &mut Download
     // if the release file we already have has the same checksum as the one we downloaded, because
     // of how all metadata files are moved into the repository path after the mirroring operation
     // is completed successfully, there should be nothing more to do. save bandwidth, save lives!
-    if let Some(local_release_file) = repository.tmp_to_root(release_file) {
+    let old_release = if let Some(local_release_file) = repository.tmp_to_root(release_file) {
         if local_release_file.exists() {
             let tmp_checksum = Checksum::checksum_file(&local_release_file).await?;
             let local_checksum = Checksum::checksum_file(release_file).await?;
@@ -244,11 +270,24 @@ pub async fn download_release(repository: &Repository, downloader: &mut Download
             if tmp_checksum == local_checksum {
                 return Ok(None)
             }
-        }
-    }
 
-    let release = Release::parse(release_file).await
+            Some(
+                Release::parse(&local_release_file).await
+                    .map_err(|e| MirsError::InvalidReleaseFile { inner: Box::new(e) })?
+            )
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let mut release = Release::parse(release_file).await
         .map_err(|e| MirsError::InvalidReleaseFile { inner: Box::new(e) })?;
+
+    if let Some(old_release) = old_release {
+        release.deduplicate(old_release);
+    }
 
     Ok(Some(release))
 }

@@ -124,6 +124,20 @@ impl Release {
     pub fn into_filtered_files(self, opts: &MirrorOpts) -> ReleaseFileIterator {
         ReleaseFileIterator::new(self, opts)
     }
+
+    pub fn deduplicate(&mut self, mut old_release: Release) {
+        let mut filtered_files = BTreeMap::new();
+        
+        while let Some((path, entry)) = self.files.pop_first() {
+            if let Some(old_entry) = old_release.files.remove(&path) {
+                if entry != old_entry {
+                    filtered_files.insert(path, entry);
+                }
+            }
+        }
+
+        self.files = filtered_files;
+    }
 }
 
 pub struct ReleaseFileIterator<'a> {
@@ -312,7 +326,7 @@ impl Checksum {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub struct FileEntry {
     pub size: u64,
     pub md5: Option<[u8; 16]>,

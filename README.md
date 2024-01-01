@@ -1,6 +1,6 @@
 # Aptmirs
 
-Aptmirs is a simple tool to mirror apt/deb repositories. 
+**aptmirs** is a simple tool to mirror apt/deb repositories. 
 
 All downloads are verified with their pre-recorded checksum while downloading.
 
@@ -13,7 +13,7 @@ During an update metadata files (Packages, Release, etc) are kept in a temporary
 
 ## Configuration
 
-Aptmirs uses a config file very similar to the sources.list format.
+aptmirs uses a config file very similar to the sources.list format.
 
 ```
 deb http://ftp.se.debian.org/debian             bookworm            main contrib non-free non-free-firmware

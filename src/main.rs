@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use clap::{command, arg, Parser, ArgAction};
 use config::read_config;
 use error::MirsError;
-use indicatif::HumanBytes;
 
 use crate::error::Result;
 
@@ -33,14 +32,7 @@ async fn main() -> Result<()> {
         println!("{} Mirroring {}", now(), &opt);
 
         match mirror::mirror(&opt, &output).await {
-            Ok(Some(result)) => println!(
-                "{} Mirroring done, {} downloaded, {} new packages ({})", 
-                now(), 
-                HumanBytes(result.total_downloaded_size),
-                result.num_packages,
-                HumanBytes(result.packages_size)
-            ),
-            Ok(None) => println!("{} Mirroring done, release unchanged.", now()),
+            Ok(result) => println!("{} Mirroring done: {result}", now()),
             Err(e) => println!("{} Mirroring failed: {e}", now())
         }
     }
