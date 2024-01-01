@@ -33,7 +33,14 @@ async fn main() -> Result<()> {
         println!("{} Mirroring {}", now(), &opt);
 
         match mirror::mirror(&opt, &output).await {
-            Ok(b)        => println!("{} Mirroring done, {} downloaded", now(), HumanBytes(b)),
+            Ok(Some(result)) => println!(
+                "{} Mirroring done, {} downloaded, {} new packages ({})", 
+                now(), 
+                HumanBytes(result.total_downloaded_size),
+                HumanBytes(result.num_packages),
+                HumanBytes(result.packages_size)
+            ),
+            Ok(None) => println!("{} Mirroring done, release unchanged.", now()),
             Err(e) => println!("{} Mirroring failed: {e}", now())
         }
     }

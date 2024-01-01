@@ -16,7 +16,13 @@ pub mod downloader;
 pub mod progress;
 pub mod repository;
 
-pub async fn mirror(opts: &MirrorOpts, output_dir: &Path) -> Result<u64> {
+pub struct MirrorResult {
+    pub total_downloaded_size: u64,
+    pub num_packages: u64,
+    pub packages_size: u64
+}
+
+pub async fn mirror(opts: &MirrorOpts, output_dir: &Path) -> Result<Option<MirrorResult>> {
     let repo = Repository::build(&opts.url, &opts.suite, output_dir)?;
 
     let mut downloader = Downloader::build(8);
@@ -38,8 +44,7 @@ pub async fn mirror(opts: &MirrorOpts, output_dir: &Path) -> Result<u64> {
 
     let Some(release) = maybe_release else {
         _ = repo.delete_tmp();
-        eprintln!("{} Release file unchanged, nothing to do.", crate::now());
-        return Ok(0)
+        return Ok(None)
     };
 
     if let Some(release_components) = release.components() {
@@ -71,14 +76,21 @@ pub async fn mirror(opts: &MirrorOpts, output_dir: &Path) -> Result<u64> {
         return Err(MirsError::DownloadPackages { inner: Box::new(e) })
     }
 
+    let packages_size = progress.bytes.success();
+    let num_packages = progress.files.success();
+
     if let Err(e) = repo.finalize().await {
         _ = repo.delete_tmp();
         return Err(MirsError::Finalize { inner: Box::new(e) })
     }
 
-    total_downloaded_size += progress.bytes.success();
+    total_downloaded_size += packages_size;
 
-    Ok(total_downloaded_size)
+    Ok(Some(MirrorResult {
+        total_downloaded_size,
+        packages_size,
+        num_packages
+    }))
 }
 
 async fn download_indices(release: Release, opts: &MirrorOpts, progress: &mut Progress, repo: &Repository, downloader: &mut Downloader) -> Result<Vec<PathBuf>> {
