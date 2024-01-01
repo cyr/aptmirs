@@ -1,4 +1,4 @@
-# Aptmirs
+# aptmirs
 
 **aptmirs** is a simple tool to mirror apt/deb repositories. 
 
