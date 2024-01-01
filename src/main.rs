@@ -37,7 +37,7 @@ async fn main() -> Result<()> {
                 "{} Mirroring done, {} downloaded, {} new packages ({})", 
                 now(), 
                 HumanBytes(result.total_downloaded_size),
-                HumanBytes(result.num_packages),
+                result.num_packages,
                 HumanBytes(result.packages_size)
             ),
             Ok(None) => println!("{} Mirroring done, release unchanged.", now()),

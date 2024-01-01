@@ -42,7 +42,13 @@ impl Downloader {
                             task_progress.bytes.inc_success(downloaded);
                         }
                     ).await {
-                        Ok(()) => task_progress.files.inc_success(1),
+                        Ok(downloaded) => {
+                            if downloaded {
+                                task_progress.files.inc_success(1)
+                            } else {
+                                task_progress.files.inc_skipped(1)
+                            }
+                        } ,
                         Err(e) => {
                             if let MirsError::Download { .. } = e {
                                 if let Some(size) = file_size {
@@ -80,26 +86,36 @@ impl Downloader {
     }
 
     pub async fn download(&mut self, download: Box<Download>) -> Result<()> {
-        if let Err(e) = download_file(&mut self.http_client, download, |bytes| {
+        match download_file(&mut self.http_client, download, |bytes| {
             self.progress.bytes.inc_success(bytes)
         }).await {
-            self.progress.files.inc_skipped(1);
-            return Err(e)
+            Ok(downloaded) => {
+                if downloaded {
+                    self.progress.files.inc_success(1);
+                } else {
+                    self.progress.files.inc_skipped(1);
+
+                }
+            },
+            Err(e) => {
+                self.progress.files.inc_skipped(1);
+                return Err(e)
+            },
         }
-        
-        self.progress.files.inc_success(1);
         
         Ok(())
     }
-
 
     pub fn progress(&self) -> Progress {
         self.progress.clone()
     }
 }
 
-async fn download_file<F>(http_client: &mut Client, download: Box<Download>, mut progress_cb: F) -> Result<()>
+async fn download_file<F>(http_client: &mut Client, download: Box<Download>, mut progress_cb: F) -> Result<bool>
     where F: FnMut(u64) {
+    
+    let mut downloaded = false;
+
     if needs_downloading(&download) {
         create_dirs(&download.primary_target_path).await?;
 
@@ -142,6 +158,7 @@ async fn download_file<F>(http_client: &mut Client, download: Box<Download>, mut
             }
         
             output.flush().await?;
+            downloaded = true;
         }
     }
 
@@ -160,7 +177,7 @@ async fn download_file<F>(http_client: &mut Client, download: Box<Download>, mut
         symlink(&rel_primary_path, &symlink_path).await?;
     }
     
-    Ok(())
+    Ok(downloaded)
 }
 
 pub async fn create_dirs(path: &Path) -> Result<()> {
