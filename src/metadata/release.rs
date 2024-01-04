@@ -149,36 +149,49 @@ pub struct ReleaseFileIterator<'a> {
 
 impl<'a> ReleaseFileIterator<'a> {
     pub fn new(release: Release, opts: &'a MirrorOpts) -> Self {
-        let mut file_prefix_filter = Vec::from([
-            String::from("Release"),
-            String::from("Contents-all"),
-            String::from("Components-all"),
-            String::from("Commands-all"),
-            String::from("Packages"),
-            String::from("icons"),
-            String::from("Translation"),
-            String::from("Sources"),
-            String::from("Index"),
-        ]);
-        
-        let mut dir_filter = BTreeSet::from([
-            String::from("dep11"),
-            String::from("i18n"),
-            String::from("binary-all"),
-            String::from("cnf"),
-            String::from("Contents-all.diff"),
-            String::from("Packages.diff"),
-        ]);
+        let (file_prefix_filter, dir_filter) = if opts.source {
+            let file_prefix_filter = Vec::from([
+                String::from("Release"),
+                String::from("Sources"),
+            ]);
+            
+            let dir_filter = BTreeSet::from([
+                String::from("source"),
+            ]);
 
-        for arch in &opts.arch {
-            dir_filter.insert(format!("binary-{arch}"));
-            dir_filter.insert(format!("Contents-{arch}.diff"));
-            //dir_filter.insert(format!("Translation-{lang}.diff")); ?? Translation-en.diff
+            (file_prefix_filter, dir_filter)
+        } else {
+            let mut file_prefix_filter = Vec::from([
+                String::from("Release"),
+                String::from("Contents-all"),
+                String::from("Components-all"),
+                String::from("Commands-all"),
+                String::from("Packages"),
+                String::from("icons"),
+                String::from("Translation"),
+                String::from("Index"),
+            ]);
+            
+            let mut dir_filter = BTreeSet::from([
+                String::from("dep11"),
+                String::from("i18n"),
+                String::from("binary-all"),
+                String::from("cnf"),
+                String::from("Contents-all.diff"),
+                String::from("Packages.diff"),
+            ]);
+            
+            for arch in &opts.arch {
+                dir_filter.insert(format!("binary-{arch}"));
+                dir_filter.insert(format!("Contents-{arch}.diff"));
 
-            file_prefix_filter.push(format!("Components-{arch}"));
-            file_prefix_filter.push(format!("Contents-{arch}"));
-            file_prefix_filter.push(format!("Commands-{arch}"));
-        }
+                file_prefix_filter.push(format!("Components-{arch}"));
+                file_prefix_filter.push(format!("Contents-{arch}"));
+                file_prefix_filter.push(format!("Commands-{arch}"));
+            }
+            
+            (file_prefix_filter, dir_filter)
+        };
 
         Self {
             release,

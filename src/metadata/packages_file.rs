@@ -1,27 +1,10 @@
-use std::{path::{Path, PathBuf}, fs::File, io::{BufReader, BufRead, Read}, sync::{atomic::{AtomicU64, Ordering}, Arc}};
+use std::{path::{Path, PathBuf}, fs::File, io::BufRead, sync::{atomic::AtomicU64, Arc}};
 
 use crate::error::{Result, MirsError};
 
-use super::checksum::{Checksum, ChecksumType};
+use super::{checksum::{Checksum, ChecksumType}, create_reader, IndexFileEntry, IndexFileEntryIterator};
 
-pub struct TrackingReader<R: Read> {
-    inner: R,
-    read: Arc<AtomicU64>
-}
-
-impl<R: Read> Read for TrackingReader<R> {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let result = self.inner.read(buf);
-
-        if let Ok(read) = result {
-            self.read.fetch_add(read as u64, Ordering::SeqCst);
-        }
-
-        result
-    }
-}
-
-pub struct Package {
+pub struct PackagesFile {
     reader: Box<dyn BufRead>,
     path: PathBuf,
     buf: String,
@@ -29,60 +12,35 @@ pub struct Package {
     read: Arc<AtomicU64>
 }
 
-impl Package {
-    pub fn build(path: &Path) -> Result<Self> {
+impl PackagesFile {
+    pub fn build(path: &Path) -> Result<Box<dyn IndexFileEntryIterator>> {
         let file = File::open(path)?;
         let size = file.metadata()?.len();
 
-        let counter = Arc::new(AtomicU64::from(0));
+        let (reader, counter) = create_reader(file, path)?;
 
-        let file_reader = TrackingReader {
-            inner: file,
-            read: counter.clone(),
-        };
-
-        let reader: Box<dyn BufRead> = match path.extension()
-            .map(|v|
-                v.to_str().expect("extension must be valid ascii")
-            ) {
-            Some("xz") => {
-                let xz_decoder = xz2::read::XzDecoder::new_multi_decoder(file_reader);
-                Box::new(BufReader::with_capacity(1024*1024, xz_decoder))
-            }
-            Some("gz") => {
-                let gz_decoder = flate2::read::GzDecoder::new(file_reader);
-                Box::new(BufReader::with_capacity(1024*1024, gz_decoder))
-            },
-            Some("bz2") => {
-                let bz2_decoder = bzip2::read::BzDecoder::new(file_reader);
-                Box::new(BufReader::with_capacity(1024*1024, bz2_decoder))
-            },
-            None => {
-                Box::new(BufReader::with_capacity(1024*1024, file_reader))
-            },
-            _ => return Err(MirsError::ParsingPackage { path: path.to_owned() })
-        };
-
-        Ok(Self {
+        Ok(Box::new(Self {
             reader,
             path: path.to_path_buf(),
             buf: String::with_capacity(1024*8),
             size,
             read: counter,
-        })
+        }))
     }
+}
 
-    pub fn size(&self) -> u64 {
+impl IndexFileEntryIterator for PackagesFile {
+    fn size(&self) -> u64 {
         self.size
     }
 
-    pub fn counter(&self) -> Arc<AtomicU64> {
+    fn counter(&self) -> Arc<AtomicU64> {
         self.read.clone()
     }
 }
 
-impl Iterator for Package {
-    type Item = Result<(String, u64, Option<Checksum>)>;
+impl Iterator for PackagesFile {
+    type Item = Result<IndexFileEntry>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -148,8 +106,12 @@ impl Iterator for Package {
 
         self.buf.clear();
 
-        if let (Some(p), Some(s), h) = (path, size, hash) {
-            Some(Ok((p, s, h)))
+        if let (Some(path), Some(size), checksum) = (path, size, hash) {
+            Some(Ok(IndexFileEntry {
+                path,
+                size, 
+                checksum
+            }))
         } else {
             None
         }

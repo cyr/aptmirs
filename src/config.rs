@@ -75,6 +75,7 @@ pub struct MirrorOpts {
     pub suite: String,
     pub components: Vec<String>,
     pub arch: Vec<String>,
+    pub source: bool,
 }
 
 
@@ -124,8 +125,10 @@ impl MirrorOpts {
     pub fn try_from(mut line: &str) -> Result<MirrorOpts> {
         let mut arch = Vec::new();
         
+        let mut source = false;
+
         line = if let Some(line) = line.strip_prefix("deb-src") {
-            arch.push("source".to_string());
+            source = true;
             line
         } else if let Some(line) = line.strip_prefix("deb") {
             line
@@ -187,7 +190,8 @@ impl MirrorOpts {
             url: url.to_owned(),
             suite: suite.to_owned(),
             components,
-            arch
+            arch,
+            source
         })
     }
 }

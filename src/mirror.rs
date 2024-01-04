@@ -9,8 +9,9 @@ use indicatif::{MultiProgress, HumanBytes};
 
 use crate::config::MirrorOpts;
 use crate::error::{Result, MirsError};
+use crate::metadata::IndexSource;
 use crate::metadata::checksum::Checksum;
-use crate::metadata::{package::Package, release::Release};
+use crate::metadata::release::Release;
 use self::{progress::Progress, repository::Repository, downloader::{Downloader, Download}};
 
 pub mod downloader;
@@ -18,7 +19,7 @@ pub mod progress;
 pub mod repository;
 
 pub enum MirrorResult {
-    NewRelease { total_download_size: u64, num_packages_downloaded: u64, packages_size: u64 },
+    NewRelease { total_download_size: u64, num_packages_downloaded: u64 },
     ReleaseUnchanged,
     IrrelevantChanges
 }
@@ -26,12 +27,11 @@ pub enum MirrorResult {
 impl Display for MirrorResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MirrorResult::NewRelease { total_download_size, num_packages_downloaded, packages_size } =>
+            MirrorResult::NewRelease { total_download_size, num_packages_downloaded } =>
                 f.write_fmt(format_args!(
-                    "{} downloaded, {} packages ({})", 
+                    "{} downloaded, {} packages/source files", 
                     HumanBytes(*total_download_size),
-                    num_packages_downloaded,
-                    HumanBytes(*packages_size), 
+                    num_packages_downloaded
                 )),
             MirrorResult::ReleaseUnchanged =>
                 f.write_str("release unchanged"),
@@ -78,11 +78,11 @@ pub async fn mirror(opts: &MirrorOpts, output_dir: &Path) -> Result<MirrorResult
     progress.next_step("Downloading indices").await;
 
     let indices = match download_indices(release, opts, &mut progress, &repo, &mut downloader).await {
-        Ok(Some(indices)) => indices,
-        Ok(None) => {
+        Ok(indices) if indices.is_empty() => {
             repo.finalize().await?;
             return Ok(MirrorResult::IrrelevantChanges)
         }
+        Ok(indices) => indices,
         Err(e) => {
             _ = repo.delete_tmp();
             return Err(MirsError::DownloadIndices { inner: Box::new(e) })
@@ -110,53 +110,49 @@ pub async fn mirror(opts: &MirrorOpts, output_dir: &Path) -> Result<MirrorResult
 
     Ok(MirrorResult::NewRelease {
         total_download_size,
-        num_packages_downloaded,
-        packages_size
+        num_packages_downloaded
     })
 }
 
-async fn download_indices(release: Release, opts: &MirrorOpts, progress: &mut Progress, repo: &Repository, downloader: &mut Downloader) -> Result<Option<Vec<PathBuf>>> {
+async fn download_indices(release: Release, opts: &MirrorOpts, progress: &mut Progress, repo: &Repository, downloader: &mut Downloader) -> Result<Vec<PathBuf>> {
     let mut indices = Vec::new();
 
     let by_hash = release.acquire_by_hash();
     
     for (path, file_entry) in release.into_filtered_files(opts) {
         let url = repo.to_url_in_dist(&path);
-        let file_path = repo.to_path_in_tmp(&url);
+        let file_path_in_tmp = repo.to_path_in_tmp(&url);
+
+        let file_path_in_root = repo.to_path_in_root(&url);
         
         // since all files have their checksums verified on download, any file that is local can
-        // presumably be trusted to be correct. and since we only move in the package files on 
-        // a successful mirror operation, if we see the package file and its hash file, there is
-        // no need to queue its packages.
+        // presumably be trusted to be correct. and since we only move in the metadata files on 
+        // a successful mirror operation, if we see the metadata file and its hash file, there is
+        // no need to queue its content.
         if let Some(checksum) = file_entry.strongest_hash() {
-            let by_hash_base = file_path
+            let by_hash_base = file_path_in_root
                 .parent()
-                .expect("all files needs a parent(?)")
-                .to_owned();
+                .expect("all files need a parent(?)");
 
             let checksum_path = by_hash_base.join(checksum.relative_path());
 
-            if checksum_path.exists() && file_path.exists() {
+            if checksum_path.exists() && file_path_in_root.exists() {
                 continue
             }
         }
 
-        if is_package(&path) {
-            indices.push(repo.to_path_in_tmp(&repo.to_url_in_dist(&path)));
+        if is_packages_file(&path) || is_sources_file(&path) {
+            indices.push(file_path_in_tmp.clone());
         }
 
-        let download = repo.create_metadata_download(url, file_path, file_entry, by_hash)?;
+        let download = repo.create_metadata_download(url, file_path_in_tmp, file_entry, by_hash)?;
         downloader.queue(download).await?;
     }
 
     let mut progress_bar = progress.create_download_progress_bar().await;
     progress.wait_for_completion(&mut progress_bar).await;
 
-    if !indices.is_empty() {
-        Ok(Some(indices))    
-    } else {
-        Ok(None)
-    }
+    Ok(indices)
 }
 
 pub async fn download_from_indices(repo: &Repository, downloader: &mut Downloader, indices: Vec<PathBuf>) -> Result<()> {
@@ -170,40 +166,40 @@ pub async fn download_from_indices(repo: &Repository, downloader: &mut Downloade
         
     let mut existing_indices = BTreeMap::<PathBuf, PathBuf>::new();
 
-    for package_file in indices.into_iter().filter(|f| f.exists()) {
-        let file_stem = package_file.file_stem().unwrap();
-        let path_with_stem = package_file.parent().unwrap().join(file_stem);
+    for index_file_path in indices.into_iter().filter(|f| f.exists()) {
+        let file_stem = index_file_path.file_stem().unwrap();
+        let path_with_stem = index_file_path.parent().unwrap().join(file_stem);
 
         if let Some(val) = existing_indices.get_mut(&path_with_stem) {
-            if is_extension_preferred(val.extension(), package_file.extension()) {
-                *val = package_file
+            if is_extension_preferred(val.extension(), index_file_path.extension()) {
+                *val = index_file_path
             }
         } else {
-            existing_indices.insert(path_with_stem, package_file);
+            existing_indices.insert(path_with_stem, index_file_path);
         }
     }
 
     file_progress.files.inc_total(existing_indices.len() as u64);
 
-    let packages = existing_indices
-        .values()
-        .map(|v| Package::build(v))
+    let packages_files = existing_indices.into_values()
+        .map(IndexSource::from)
+        .map(|v| v.into_reader())
         .collect::<Result<Vec<_>>>()?;
 
-    let total_size = packages.iter().map(|v| v.size()).sum();
+    let total_size = packages_files.iter().map(|v| v.size()).sum();
     let mut incremental_size_base = 0;
 
     file_progress.bytes.inc_total(total_size);
 
-    for package in packages {
-        let counter = package.counter();
+    for packages_file in packages_files {
+        let counter = packages_file.counter();
         file_progress.update_for_bytes(&mut file_progress_bar);
-        let package_size = package.size();
+        let package_size = packages_file.size();
 
-        for maybe_entry in package {
-            let (file_path, file_size, file_checksum) = maybe_entry?;
+        for package in packages_file {
+            let package = package?;
 
-            let dl = repo.create_file_download(&file_path, file_size, file_checksum);
+            let dl = repo.create_file_download(package);
             downloader.queue(dl).await?;
             
             file_progress.bytes.set_success(counter.load(Ordering::SeqCst) + incremental_size_base);
@@ -303,11 +299,18 @@ fn is_extension_preferred(old: Option<&OsStr>, new: Option<&OsStr>) -> bool {
     )
 }
 
-fn is_package(path: &str) -> bool {
+fn is_packages_file(path: &str) -> bool {
     path.ends_with("Packages") ||
         path.ends_with("Packages.gz") || 
         path.ends_with("Packages.xz") ||
         path.ends_with("Packages.bz2")
+}
+
+fn is_sources_file(path: &str) -> bool {
+    path.ends_with("Sources") || 
+        path.ends_with("Sources.gz") ||
+        path.ends_with("Sources.xz") ||
+        path.ends_with("Sources.bz2")
 }
 
 fn get_release_file(files: &Vec<PathBuf>) -> Option<&PathBuf> {

@@ -36,8 +36,11 @@ pub enum MirsError {
     #[error("url does not point to a valid repository, no release file found")]
     NoReleaseFile,
 
-    #[error("unable to parse package file {path}")]
-    ParsingPackage { path: PathBuf },
+    #[error("unable to parse packages file {path}")]
+    ParsingPackages { path: PathBuf },
+
+    #[error("unable to parse sources file {path}")]
+    ParsingSources { path: PathBuf },
 
     #[error("unable to parse url {url}")]
     UrlParsing { url: String },
@@ -50,6 +53,9 @@ pub enum MirsError {
 
     #[error(transparent)]
     Hex(#[from]FromHexError),
+
+    #[error("{value} is not a recognized checksum")]
+    IntoChecksum { value: String },
 
     #[error("checksum failed for: {url}, expected hash: {expected}, calculated hash: {hash}")]
     Checksum { url: String, expected: String, hash: String },

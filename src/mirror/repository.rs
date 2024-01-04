@@ -4,7 +4,7 @@ use reqwest::Url;
 
 use super::downloader::Download;
 
-use crate::{error::{Result, MirsError}, metadata::{release::FileEntry, checksum::Checksum}};
+use crate::{error::{Result, MirsError}, metadata::{release::FileEntry, IndexFileEntry}};
 
 pub struct Repository {
     root_url: String,
@@ -101,14 +101,14 @@ impl Repository {
             .ok()
     }
 
-    pub fn create_file_download(&self, path: &str, size: u64, checksum: Option<Checksum>) -> Box<Download> {
-        let url = self.to_url_in_root(path);
+    pub fn create_file_download(&self, package: IndexFileEntry) -> Box<Download> {
+        let url = self.to_url_in_root(&package.path);
         let primary_target_path = self.to_path_in_root(&url);
 
         Box::new(Download {
             url,
-            size: Some(size),
-            checksum,
+            size: Some(package.size),
+            checksum: package.checksum,
             primary_target_path,
             symlink_paths: Vec::new(),
             always_download: false,

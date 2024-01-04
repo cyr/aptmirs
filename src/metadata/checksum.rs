@@ -5,7 +5,7 @@ use sha1::{Sha1, Digest, digest::{FixedOutput, Update}};
 use sha2::{Sha256, Sha512};
 use tokio::io::AsyncReadExt;
 
-use crate::error::Result;
+use crate::error::{Result, MirsError};
 
 #[derive(Debug, PartialEq)]
 pub enum Checksum {
@@ -13,6 +13,36 @@ pub enum Checksum {
     Sha1([u8; 20]),
     Sha256([u8; 32]),
     Sha512([u8; 64])
+}
+
+impl TryFrom<&str> for Checksum {
+    type Error = MirsError;
+
+    fn try_from(value: &str) -> std::prelude::v1::Result<Self, Self::Error> {
+        match value.len() {
+            32 => {
+                let mut bytes = [0_u8; 16];
+                hex::decode_to_slice(value, &mut bytes)?;
+                Ok(bytes.into())
+            },
+            40 => {
+                let mut bytes = [0_u8; 20];
+                hex::decode_to_slice(value, &mut bytes)?;
+                Ok(bytes.into())
+            },
+            64 => {
+                let mut bytes = [0_u8; 32];
+                hex::decode_to_slice(value, &mut bytes)?;
+                Ok(bytes.into())
+            },
+            128 => {
+                let mut bytes = [0_u8; 64];
+                hex::decode_to_slice(value, &mut bytes)?;
+                Ok(bytes.into())
+            }
+            _ => Err(MirsError::IntoChecksum { value: value.to_string() })
+        }
+    }
 }
 
 impl From<[u8; 16]> for Checksum {
@@ -76,6 +106,23 @@ impl Checksum {
         }
 
         Ok(hasher.compute())
+    }
+
+    pub fn bits(&self) -> usize {
+        match self {
+            Checksum::Md5(v) => v.len(),
+            Checksum::Sha1(v) => v.len(),
+            Checksum::Sha256(v) => v.len(),
+            Checksum::Sha512(v) => v.len(),
+        }
+    }
+
+    pub fn replace_if_stronger(&mut self, other: Checksum) {
+        if self.bits() >= other.bits() {
+            return
+        }
+
+        *self = other
     }
 }
 
