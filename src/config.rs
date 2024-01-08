@@ -78,7 +78,6 @@ pub struct MirrorOpts {
     pub source: bool,
 }
 
-
 impl Ord for MirrorOpts {
     fn cmp(&self, other: &Self) -> Ordering {
         match self.url.cmp(&other.url) {

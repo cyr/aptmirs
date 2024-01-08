@@ -2,11 +2,12 @@ use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fmt::Display;
 use std::os::unix::ffi::OsStrExt;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 
 use indicatif::{MultiProgress, HumanBytes};
 
+use crate::CliOpts;
 use crate::config::MirrorOpts;
 use crate::error::{Result, MirsError};
 use crate::metadata::IndexSource;
@@ -41,17 +42,17 @@ impl Display for MirrorResult {
     }
 }
 
-pub async fn mirror(opts: &MirrorOpts, output_dir: &Path) -> Result<MirrorResult> {
-    let repo = Repository::build(&opts.url, &opts.suite, output_dir)?;
+pub async fn mirror(opts: &MirrorOpts, cli_opts: &CliOpts, downloader: &mut Downloader) -> Result<MirrorResult> {
+    let repo = Repository::build(&opts.url, &opts.suite, &cli_opts.output)?;
 
-    let mut downloader = Downloader::build(8);
     let mut progress = downloader.progress();
+    progress.reset();
 
     let mut total_download_size = 0_u64;
 
     progress.next_step("Downloading release").await;
 
-    let release = match download_release(&repo, &mut downloader).await {
+    let release = match download_release(&repo, downloader).await {
         Ok(Some(release)) => release,
         Ok(None) => {
             _ = repo.delete_tmp();
@@ -77,7 +78,7 @@ pub async fn mirror(opts: &MirrorOpts, output_dir: &Path) -> Result<MirrorResult
 
     progress.next_step("Downloading indices").await;
 
-    let indices = match download_indices(release, opts, &mut progress, &repo, &mut downloader).await {
+    let indices = match download_indices(release, opts, cli_opts, &mut progress, &repo, downloader).await {
         Ok(indices) if indices.is_empty() => {
             repo.finalize().await?;
             return Ok(MirrorResult::IrrelevantChanges)
@@ -93,7 +94,7 @@ pub async fn mirror(opts: &MirrorOpts, output_dir: &Path) -> Result<MirrorResult
 
     progress.next_step("Downloading packages").await;
 
-    if let Err(e) = download_from_indices(&repo, &mut downloader, indices).await {
+    if let Err(e) = download_from_indices(&repo, downloader, indices).await {
         _ = repo.delete_tmp();
         return Err(MirsError::DownloadPackages { inner: Box::new(e) })
     }
@@ -114,12 +115,12 @@ pub async fn mirror(opts: &MirrorOpts, output_dir: &Path) -> Result<MirrorResult
     })
 }
 
-async fn download_indices(release: Release, opts: &MirrorOpts, progress: &mut Progress, repo: &Repository, downloader: &mut Downloader) -> Result<Vec<PathBuf>> {
+async fn download_indices(release: Release, opts: &MirrorOpts, cli_opts: &CliOpts, progress: &mut Progress, repo: &Repository, downloader: &mut Downloader) -> Result<Vec<PathBuf>> {
     let mut indices = Vec::new();
 
     let by_hash = release.acquire_by_hash();
     
-    for (path, file_entry) in release.into_filtered_files(opts) {
+    for (path, file_entry) in release.into_filtered_files(opts, cli_opts) {
         let url = repo.to_url_in_dist(&path);
         let file_path_in_tmp = repo.to_path_in_tmp(&url);
 

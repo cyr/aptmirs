@@ -106,6 +106,12 @@ impl Progress {
         progress_bar.set_message(HumanBytes(self.bytes.success()).to_string());
     }
 
+    pub fn reset(&mut self) {
+        self.bytes.reset();
+        self.files.reset();
+        self.step = Arc::new(AtomicU8::new(0));
+    }
+
     pub async fn next_step(&mut self, step_name: &str) {
         *self.step_name.lock().await = step_name.to_string();
 

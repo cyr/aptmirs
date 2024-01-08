@@ -2,7 +2,7 @@ use std::{path::{Path, Component}, collections::{BTreeMap, BTreeSet}};
 
 use tokio::{fs::File, io::{BufReader, AsyncBufReadExt}};
 
-use crate::{error::{Result, MirsError}, config::MirrorOpts};
+use crate::{error::{Result, MirsError}, config::MirrorOpts, CliOpts};
 
 use super::checksum::Checksum;
 
@@ -121,8 +121,8 @@ impl Release {
         self.map.get("Components")
     }
 
-    pub fn into_filtered_files(self, opts: &MirrorOpts) -> ReleaseFileIterator {
-        ReleaseFileIterator::new(self, opts)
+    pub fn into_filtered_files<'a>(self, opts: &'a MirrorOpts, cli_opts: &'a CliOpts) -> ReleaseFileIterator<'a> {
+        ReleaseFileIterator::new(self, opts, cli_opts)
     }
 
     pub fn deduplicate(&mut self, mut old_release: Release) {
@@ -148,7 +148,7 @@ pub struct ReleaseFileIterator<'a> {
 }
 
 impl<'a> ReleaseFileIterator<'a> {
-    pub fn new(release: Release, opts: &'a MirrorOpts) -> Self {
+    pub fn new(release: Release, opts: &'a MirrorOpts, cli_opts: &'a CliOpts) -> Self {
         let (file_prefix_filter, dir_filter) = if opts.source {
             let file_prefix_filter = Vec::from([
                 String::from("Release"),
@@ -180,14 +180,24 @@ impl<'a> ReleaseFileIterator<'a> {
                 String::from("Contents-all.diff"),
                 String::from("Packages.diff"),
             ]);
-            
+
+            if cli_opts.udeb {
+                file_prefix_filter.push(String::from("Contents-udeb-all"));
+                dir_filter.insert(String::from("debian-installer"));
+            }
+
             for arch in &opts.arch {
                 dir_filter.insert(format!("binary-{arch}"));
                 dir_filter.insert(format!("Contents-{arch}.diff"));
 
+
                 file_prefix_filter.push(format!("Components-{arch}"));
                 file_prefix_filter.push(format!("Contents-{arch}"));
                 file_prefix_filter.push(format!("Commands-{arch}"));
+
+                if cli_opts.udeb {
+                    file_prefix_filter.push(format!("Contents-udeb-{arch}"));
+                }
             }
             
             (file_prefix_filter, dir_filter)
@@ -228,9 +238,12 @@ impl<'a> Iterator for ReleaseFileIterator<'a> {
                         let part_name = part.to_str()
                             .expect("path should be utf8");
 
-                        if parts.peek().is_none() && 
-                            self.file_prefix_filter.iter().any(|v| part_name.starts_with(v)) {
-                            return Some((path, file_entry))
+                        if parts.peek().is_none() {
+                            if self.file_prefix_filter.iter().any(|v| part_name.starts_with(v)) {
+                                return Some((path, file_entry))
+                            }
+
+                            break
                         } 
 
                         if !self.dir_filter.contains(part_name) {
