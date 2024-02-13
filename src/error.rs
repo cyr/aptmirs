@@ -42,6 +42,9 @@ pub enum MirsError {
     #[error("unable to parse sources file {path}")]
     ParsingSources { path: PathBuf },
 
+    #[error("unable to parse index diff file {path}")]
+    ParsingDiffIndex { path: PathBuf },
+
     #[error("unable to parse url {url}")]
     UrlParsing { url: String },
 
@@ -69,6 +72,9 @@ pub enum MirsError {
     #[error("error occurred while downloading indices: {inner}")]
     DownloadIndices { inner: Box<MirsError> },
     
+    #[error("error occurred while downloading diffs: {inner}")]
+    DownloadDiffs { inner: Box<MirsError> },
+
     #[error("error occurred while downloading packages: {inner}")]
     DownloadPackages { inner: Box<MirsError> },
 

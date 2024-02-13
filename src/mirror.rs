@@ -7,6 +7,7 @@ use std::sync::atomic::Ordering;
 
 use indicatif::{MultiProgress, HumanBytes};
 
+use crate::metadata::diff_index_file::DiffIndexFile;
 use crate::CliOpts;
 use crate::config::MirrorOpts;
 use crate::error::{Result, MirsError};
@@ -78,8 +79,8 @@ pub async fn mirror(opts: &MirrorOpts, cli_opts: &CliOpts, downloader: &mut Down
 
     progress.next_step("Downloading indices").await;
 
-    let indices = match download_indices(release, opts, cli_opts, &mut progress, &repo, downloader).await {
-        Ok(indices) if indices.is_empty() => {
+    let (indices, diff_indices) = match download_indices(release, opts, cli_opts, &mut progress, &repo, downloader).await {
+        Ok((indices, diff_indices)) if indices.is_empty() && diff_indices.is_empty() => {
             repo.finalize().await?;
             return Ok(MirrorResult::IrrelevantChanges)
         }
@@ -90,6 +91,15 @@ pub async fn mirror(opts: &MirrorOpts, cli_opts: &CliOpts, downloader: &mut Down
         }
     };
 
+    total_download_size += progress.bytes.success();
+
+    progress.next_step("Downloading diffs").await;
+
+    if let Err(e) = download_from_diff_indices(&repo, downloader, &mut progress, diff_indices).await {
+        _ = repo.delete_tmp();
+        return Err(MirsError::DownloadDiffs { inner: Box::new(e) })
+    }
+    
     total_download_size += progress.bytes.success();
 
     progress.next_step("Downloading packages").await;
@@ -115,11 +125,12 @@ pub async fn mirror(opts: &MirrorOpts, cli_opts: &CliOpts, downloader: &mut Down
     })
 }
 
-async fn download_indices(release: Release, opts: &MirrorOpts, cli_opts: &CliOpts, progress: &mut Progress, repo: &Repository, downloader: &mut Downloader) -> Result<Vec<PathBuf>> {
+async fn download_indices(release: Release, opts: &MirrorOpts, cli_opts: &CliOpts, progress: &mut Progress, repo: &Repository, downloader: &mut Downloader) -> Result<(Vec<PathBuf>, Vec<PathBuf>)> {
     let mut indices = Vec::new();
+    let mut index_files = Vec::new();
 
     let by_hash = release.acquire_by_hash();
-    
+
     for (path, file_entry) in release.into_filtered_files(opts, cli_opts) {
         let url = repo.to_url_in_dist(&path);
         let file_path_in_tmp = repo.to_path_in_tmp(&url);
@@ -146,6 +157,10 @@ async fn download_indices(release: Release, opts: &MirrorOpts, cli_opts: &CliOpt
             indices.push(file_path_in_tmp.clone());
         }
 
+        if is_index_file(&path) {
+            index_files.push(file_path_in_tmp.clone());
+        }
+
         let download = repo.create_metadata_download(url, file_path_in_tmp, file_entry, by_hash)?;
         downloader.queue(download).await?;
     }
@@ -153,7 +168,40 @@ async fn download_indices(release: Release, opts: &MirrorOpts, cli_opts: &CliOpt
     let mut progress_bar = progress.create_download_progress_bar().await;
     progress.wait_for_completion(&mut progress_bar).await;
 
-    Ok(indices)
+    Ok((indices, index_files))
+}
+
+pub async fn download_from_diff_indices(repo: &Repository, downloader: &mut Downloader, progress: &mut Progress, diff_indices: Vec<PathBuf>) -> Result<()> {
+    for path in diff_indices {
+        let rel_base_path = repo.rel_from_tmp(&path).parent().unwrap();
+
+        let mut diff_index = DiffIndexFile::parse(&path).await?;
+
+        while let Some((path, entry)) = diff_index.files.pop_first() {
+            let rel_file_path = rel_base_path.join(path);
+
+            let url = repo.to_url_in_root(rel_file_path.to_str().unwrap());
+            let primary_target_path = repo.to_path_in_root(&url);
+
+            let checksum = entry.strongest_hash();
+
+            let download = Download {
+                url,
+                size: Some(entry.size),
+                checksum,
+                primary_target_path,
+                symlink_paths: Vec::new(),
+                always_download: false,
+            };
+
+            downloader.queue(Box::new(download)).await?;
+        }
+    }
+
+    let mut progress_bar = progress.create_download_progress_bar().await;
+    progress.wait_for_completion(&mut progress_bar).await;
+
+    Ok(())
 }
 
 pub async fn download_from_indices(repo: &Repository, downloader: &mut Downloader, indices: Vec<PathBuf>) -> Result<()> {
@@ -305,6 +353,10 @@ fn is_packages_file(path: &str) -> bool {
         path.ends_with("Packages.gz") || 
         path.ends_with("Packages.xz") ||
         path.ends_with("Packages.bz2")
+}
+
+fn is_index_file(path: &str) -> bool {
+    path.ends_with("Index")
 }
 
 fn is_sources_file(path: &str) -> bool {

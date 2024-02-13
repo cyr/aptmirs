@@ -86,7 +86,7 @@ impl Release {
                     if let ChecksumState::PgpMessage | ChecksumState::PgpSignature = checksum_state {
                         continue
                     }
-
+                    
                     checksum_state = ChecksumState::No;
 
                     let (k, v) = v.split_once(": ")
@@ -101,7 +101,12 @@ impl Release {
                 Line::PGPSignedMessageStart => checksum_state = ChecksumState::PgpMessage,
                 Line::PGPSignatureStart     => checksum_state = ChecksumState::PgpSignature,
                 Line::PGPSignatureEnd       => checksum_state = ChecksumState::No,
-                Line::Unknown(_)            => continue,
+                Line::Unknown(_)            => {
+                    match checksum_state {
+                        ChecksumState::PgpSignature => (),
+                        _ => checksum_state = ChecksumState::No
+                    }
+                },
             }
         }
 

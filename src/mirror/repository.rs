@@ -79,6 +79,11 @@ impl Repository {
         }).await?
     }
 
+    pub fn rel_from_tmp<'a>(&self, path: &'a Path) -> &'a Path {
+        path.strip_prefix(&self.tmp_dir)
+            .expect("input path should be in tmp dir")
+    }
+
     pub fn to_path_in_tmp(&self, url: &str) -> PathBuf {
         self.to_path_in_local_dir(&self.tmp_dir, url)
     }

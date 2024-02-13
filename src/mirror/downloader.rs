@@ -38,9 +38,7 @@ impl Downloader {
                     let file_size = dl.size;
 
                     match download_file(&mut task_http_client, dl, 
-                        |downloaded| { 
-                            task_progress.bytes.inc_success(downloaded);
-                        }
+                        |downloaded| task_progress.bytes.inc_success(downloaded)
                     ).await {
                         Ok(downloaded) => {
                             if downloaded {

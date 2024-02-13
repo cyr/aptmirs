@@ -4,7 +4,7 @@ use console::{style, pad_str};
 use indicatif::{ProgressBar, ProgressStyle, ProgressFinish, HumanBytes};
 use tokio::{sync::Mutex, time::sleep};
 
-pub const TOTAL_STEPS: u8 = 3;
+pub const TOTAL_STEPS: u8 = 4;
 
 #[derive(Clone)]
 pub struct Progress {

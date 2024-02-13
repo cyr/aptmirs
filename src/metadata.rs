@@ -8,6 +8,7 @@ pub mod release;
 pub mod packages_file;
 pub mod sources_file;
 pub mod checksum;
+pub mod diff_index_file;
 
 pub enum IndexSource {
     Packages(PathBuf),

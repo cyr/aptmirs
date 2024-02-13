@@ -83,8 +83,8 @@ impl Display for Checksum {
 impl Checksum {
     pub fn create_hasher(&self) -> Box<dyn Hasher> {
         match self {
-            Checksum::Md5(_)   => Box::new(Md5Hasher::new()),
-            Checksum::Sha1(_)  => Box::new(Sha1Hasher::new()),
+            Checksum::Md5(_)    => Box::new(Md5Hasher::new()),
+            Checksum::Sha1(_)   => Box::new(Sha1Hasher::new()),
             Checksum::Sha256(_) => Box::new(Sha256Hasher::new()),
             Checksum::Sha512(_) => Box::new(Sha512Hasher::new()),
         }
