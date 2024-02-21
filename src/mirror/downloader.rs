@@ -1,11 +1,12 @@
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use async_channel::{bounded, Sender, Receiver};
+use compact_str::{CompactString, ToCompactString};
 use reqwest::{Client, StatusCode};
 use tokio::{task::JoinHandle, io::AsyncWriteExt, fs::symlink};
 
-use crate::{error::{Result, MirsError}, metadata::checksum::Checksum};
+use crate::{error::{MirsError, Result}, metadata::{checksum::Checksum, FilePath}};
 
 use super::progress::Progress;
 
@@ -119,7 +120,7 @@ async fn download_file<F>(http_client: &mut Client, download: Box<Download>, mut
         let mut output = tokio::fs::File::create(&download.primary_target_path).await?;
 
         if download.size.is_some_and(|v| v > 0) || download.size.is_none() {
-            let mut response = http_client.get(&download.url).send().await?;
+            let mut response = http_client.get(download.url.as_str()).send().await?;
 
             if response.status() == StatusCode::NOT_FOUND {
                 return Err(MirsError::Download { url: download.url.clone(), status_code: response.status() })
@@ -142,7 +143,7 @@ async fn download_file<F>(http_client: &mut Client, download: Box<Download>, mut
                     tokio::fs::remove_file(&download.primary_target_path).await?;
                     return Err(MirsError::Checksum { 
                         url: download.url, 
-                        expected: expected_checksum.to_string(), 
+                        expected: expected_checksum.to_compact_string(), 
                         hash: checksum.to_string() 
                     })
                 }
@@ -177,8 +178,8 @@ async fn download_file<F>(http_client: &mut Client, download: Box<Download>, mut
     Ok(downloaded)
 }
 
-pub async fn create_dirs(path: &Path) -> Result<()> {
-    if let Some(parent_dir) = path.parent() {
+pub async fn create_dirs<P: AsRef<Path>>(path: P) -> Result<()> {
+    if let Some(parent_dir) = path.as_ref().parent() {
         if !parent_dir.exists() {
             tokio::fs::create_dir_all(parent_dir).await?;
         }
@@ -205,10 +206,10 @@ fn needs_downloading(dl: &Download) -> bool {
 
 #[derive(Debug)]
 pub struct Download {
-    pub url: String,
+    pub url: CompactString,
     pub size: Option<u64>,
     pub checksum: Option<Checksum>,
-    pub primary_target_path: PathBuf,
-    pub symlink_paths: Vec<PathBuf>,
+    pub primary_target_path: FilePath,
+    pub symlink_paths: Vec<FilePath>,
     pub always_download: bool
 }

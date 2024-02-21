@@ -2,16 +2,17 @@ use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fmt::Display;
 use std::os::unix::ffi::OsStrExt;
-use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::atomic::Ordering;
 
+use compact_str::format_compact;
 use indicatif::{MultiProgress, HumanBytes};
 
 use crate::metadata::diff_index_file::DiffIndexFile;
 use crate::CliOpts;
 use crate::config::MirrorOpts;
 use crate::error::{Result, MirsError};
-use crate::metadata::IndexSource;
+use crate::metadata::{FilePath, IndexSource};
 use crate::metadata::checksum::Checksum;
 use crate::metadata::release::Release;
 use self::{progress::Progress, repository::Repository, downloader::{Downloader, Download}};
@@ -125,7 +126,7 @@ pub async fn mirror(opts: &MirrorOpts, cli_opts: &CliOpts, downloader: &mut Down
     })
 }
 
-async fn download_indices(release: Release, opts: &MirrorOpts, cli_opts: &CliOpts, progress: &mut Progress, repo: &Repository, downloader: &mut Downloader) -> Result<(Vec<PathBuf>, Vec<PathBuf>)> {
+async fn download_indices(release: Release, opts: &MirrorOpts, cli_opts: &CliOpts, progress: &mut Progress, repo: &Repository, downloader: &mut Downloader) -> Result<(Vec<FilePath>, Vec<FilePath>)> {
     let mut indices = Vec::new();
     let mut index_files = Vec::new();
 
@@ -146,7 +147,7 @@ async fn download_indices(release: Release, opts: &MirrorOpts, cli_opts: &CliOpt
                 .parent()
                 .expect("all files need a parent(?)");
 
-            let checksum_path = by_hash_base.join(checksum.relative_path());
+            let checksum_path = FilePath(format_compact!("{by_hash_base}/{}", checksum.relative_path()));
 
             if checksum_path.exists() && file_path_in_root.exists() {
                 continue
@@ -171,16 +172,20 @@ async fn download_indices(release: Release, opts: &MirrorOpts, cli_opts: &CliOpt
     Ok((indices, index_files))
 }
 
-pub async fn download_from_diff_indices(repo: &Repository, downloader: &mut Downloader, progress: &mut Progress, diff_indices: Vec<PathBuf>) -> Result<()> {
+pub async fn download_from_diff_indices(repo: &Repository, downloader: &mut Downloader, progress: &mut Progress, diff_indices: Vec<FilePath>) -> Result<()> {
     for path in diff_indices {
-        let rel_base_path = repo.rel_from_tmp(&path).parent().unwrap();
+        let rel_path = FilePath::from_str(
+            repo.rel_from_tmp(path.as_str())
+        )?;
+
+        let rel_base_path = FilePath::from_str(rel_path.parent().unwrap())?;
 
         let mut diff_index = DiffIndexFile::parse(&path).await?;
 
         while let Some((path, entry)) = diff_index.files.pop_first() {
-            let rel_file_path = rel_base_path.join(path);
+            let rel_file_path = rel_base_path.join(&path);
 
-            let url = repo.to_url_in_root(rel_file_path.to_str().unwrap());
+            let url = repo.to_url_in_root(rel_file_path.as_str());
             let primary_target_path = repo.to_path_in_root(&url);
 
             let checksum = entry.strongest_hash();
@@ -204,7 +209,7 @@ pub async fn download_from_diff_indices(repo: &Repository, downloader: &mut Down
     Ok(())
 }
 
-pub async fn download_from_indices(repo: &Repository, downloader: &mut Downloader, indices: Vec<PathBuf>) -> Result<()> {
+pub async fn download_from_indices(repo: &Repository, downloader: &mut Downloader, indices: Vec<FilePath>) -> Result<()> {
     let multi_bar = MultiProgress::new();
 
     let mut file_progress = Progress::new_with_step(3, "Processing indices");
@@ -213,11 +218,15 @@ pub async fn download_from_indices(repo: &Repository, downloader: &mut Downloade
     let mut file_progress_bar = multi_bar.add(file_progress.create_processing_progress_bar().await);
     let mut dl_progress_bar = multi_bar.add(dl_progress.create_download_progress_bar().await);
         
-    let mut existing_indices = BTreeMap::<PathBuf, PathBuf>::new();
+    let mut existing_indices = BTreeMap::<FilePath, FilePath>::new();
 
     for index_file_path in indices.into_iter().filter(|f| f.exists()) {
         let file_stem = index_file_path.file_stem().unwrap();
-        let path_with_stem = index_file_path.parent().unwrap().join(file_stem);
+        let path_with_stem = FilePath(format_compact!(
+            "{}/{}", 
+            index_file_path.parent().unwrap(), 
+            file_stem.to_str().unwrap()
+        ));
 
         if let Some(val) = existing_indices.get_mut(&path_with_stem) {
             if is_extension_preferred(val.extension(), index_file_path.extension()) {
@@ -366,7 +375,7 @@ fn is_sources_file(path: &str) -> bool {
         path.ends_with("Sources.bz2")
 }
 
-fn get_release_file(files: &Vec<PathBuf>) -> Option<&PathBuf> {
+fn get_release_file(files: &Vec<FilePath>) -> Option<&FilePath> {
     for file in files {
         let file_name = file.file_name()
             .expect("release files should be files");

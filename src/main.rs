@@ -1,8 +1,8 @@
-use std::path::PathBuf;
-
 use clap::{command, arg, Parser};
+use compact_str::format_compact;
 use config::read_config;
 use error::MirsError;
+use metadata::FilePath;
 use mirror::downloader::Downloader;
 
 use crate::error::Result;
@@ -21,7 +21,7 @@ async fn main() -> Result<()> {
     ).await?;
 
     if opts.is_empty() {
-        return Err(MirsError::Config { msg: format!("no valid repositories in: {}", cli_opts.config.unwrap().to_string_lossy()) })
+        return Err(MirsError::Config { msg: format_compact!("no valid repositories in: {}", cli_opts.config.unwrap()) })
     }
 
     let mut downloader = Downloader::build(cli_opts.dl_threads);
@@ -43,11 +43,11 @@ async fn main() -> Result<()> {
 struct CliOpts {
     #[arg(short, long, env, value_name = "CONFIG_FILE", default_value = "/etc/apt/mirror.list", 
         help = "The path to the config file containing the mirror options")]
-    config: Option<PathBuf>,
+    config: Option<FilePath>,
     
     #[arg(short, long, env, value_name = "OUTPUT",
         help = "The directory where the mirrors will be downloaded into")]
-    output: PathBuf,
+    output: FilePath,
 
     #[arg(short, long, env, value_name = "UDEB", default_value_t = false,
         help = "Download packages for debian-installer")]

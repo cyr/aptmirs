@@ -1,7 +1,7 @@
 [package]
 name = "aptmirs"
 description = "A simple tool for mirroring apt/deb repositories"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -11,6 +11,7 @@ async-channel = "2.1.1"
 bzip2 = "0.4.4"
 chrono = "0.4.31"
 clap = { version = "4.4.11", features = ["cargo", "derive", "env"] }
+compact_str = { version = "0.7.1", features = ["serde"] }
 console = "0.15.7"
 flate2 = "1.0.28"
 hex = "0.4.3"

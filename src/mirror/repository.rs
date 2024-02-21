@@ -1,32 +1,31 @@
-use std::path::{PathBuf, Path};
+use std::path::Path;
 
+use compact_str::{format_compact, CompactString, ToCompactString};
 use reqwest::Url;
 
 use super::downloader::Download;
 
-use crate::{error::{Result, MirsError}, metadata::{release::FileEntry, IndexFileEntry}};
+use crate::{error::{MirsError, Result}, metadata::{release::FileEntry, FilePath, IndexFileEntry}};
 
 pub struct Repository {
-    root_url: String,
-    root_dir: PathBuf,
-    dist_url: String,
-    tmp_dir: PathBuf,
+    root_url: CompactString,
+    root_dir: FilePath,
+    dist_url: CompactString,
+    tmp_dir: FilePath,
 }
 
 impl Repository {
-    pub fn build(archive_root: &str, suite: &str, base_dir: &Path) -> Result<Self> {
+    pub fn build(archive_root: &str, suite: &str, base_dir: &FilePath) -> Result<Self> {
         let root_url = match archive_root.strip_prefix('/') {
-            Some(url) => url.to_string(),
-            None => archive_root.to_string(),
+            Some(url) => url.to_compact_string(),
+            None => archive_root.to_compact_string(),
         };
-
-        let dist_url = format!("{root_url}/dists/{suite}");
+        let dist_url = format_compact!("{root_url}/dists/{suite}");
 
         let parsed_url = Url::parse(&root_url)
-            .map_err(|_| MirsError::UrlParsing { url: root_url.to_string() })?;
+            .map_err(|_| MirsError::UrlParsing { url: root_url.clone() })?;
 
         let root_dir = local_dir_from_archive_url(&parsed_url, base_dir)?;
-
         let tmp_dir = create_tmp_dir(&parsed_url, suite, base_dir)?;
 
         Ok(Self {
@@ -37,17 +36,17 @@ impl Repository {
         })
     }
 
-    pub fn release_urls(&self) -> [String; 3] {
+    pub fn release_urls(&self) -> [CompactString; 3] {
         [
-            format!("{}/InRelease", self.dist_url),
-            format!("{}/Release", self.dist_url),
-            format!("{}/Release.gpg", self.dist_url)
+            format_compact!("{}/InRelease", self.dist_url),
+            format_compact!("{}/Release", self.dist_url),
+            format_compact!("{}/Release.gpg", self.dist_url)
         ]
     }
 
-    fn to_path_in_local_dir(&self, base: &Path, url: &str) -> PathBuf {
+    fn to_path_in_local_dir(&self, base: &FilePath, url: &str) -> FilePath {
         let relative_path = url
-            .strip_prefix(&self.root_url)
+            .strip_prefix(&self.root_url.as_str())
             .expect("implementation error; download url should be in archive root");
 
         let relative_path = match relative_path.strip_prefix('/') {
@@ -71,7 +70,7 @@ impl Repository {
         let root_dir = self.root_dir.clone();
 
         tokio::task::spawn_blocking(move || {
-            rebase_dir(&tmp_dir, &tmp_dir, &root_dir)?;
+            rebase_dir(&tmp_dir.as_ref(), &tmp_dir.as_ref(), &root_dir.as_ref())?;
             
             std::fs::remove_dir_all(&tmp_dir)?;
             
@@ -79,31 +78,30 @@ impl Repository {
         }).await?
     }
 
-    pub fn rel_from_tmp<'a>(&self, path: &'a Path) -> &'a Path {
-        path.strip_prefix(&self.tmp_dir)
+    pub fn rel_from_tmp<'a>(&self, path: &'a str) -> &'a str {
+        path.strip_prefix(&self.tmp_dir.as_str())
             .expect("input path should be in tmp dir")
     }
 
-    pub fn to_path_in_tmp(&self, url: &str) -> PathBuf {
+    pub fn to_path_in_tmp(&self, url: &str) -> FilePath {
         self.to_path_in_local_dir(&self.tmp_dir, url)
     }
 
-    pub fn to_path_in_root(&self, url: &str) -> PathBuf {
+    pub fn to_path_in_root(&self, url: &str) -> FilePath {
         self.to_path_in_local_dir(&self.root_dir, url)
     }
 
-    pub fn to_url_in_dist(&self, path: &str) -> String {
-        format!("{}/{}", self.dist_url, path)
+    pub fn to_url_in_dist(&self, path: &str) -> CompactString {
+        format_compact!("{}/{}", self.dist_url, path)
     }
 
-    pub fn to_url_in_root(&self, path: &str) -> String {
-        format!("{}/{}", self.root_url, path)
+    pub fn to_url_in_root(&self, path: &str) -> CompactString {
+        format_compact!("{}/{}", self.root_url, path)
     }
 
-    pub fn tmp_to_root(&self, path: &Path) -> Option<PathBuf> {
-        path.strip_prefix(&self.tmp_dir)
+    pub fn tmp_to_root<P: AsRef<str>>(&self, path: P) -> Option<FilePath> {
+        path.as_ref().strip_prefix(self.tmp_dir.as_str())
             .map(|v| self.root_dir.join(v))
-            .ok()
     }
 
     pub fn create_file_download(&self, package: IndexFileEntry) -> Box<Download> {
@@ -120,11 +118,13 @@ impl Repository {
         })
     }
 
-    pub fn create_metadata_download(&self, url: String, file_path: PathBuf, file_entry: FileEntry, by_hash: bool) -> Result<Box<Download>> {
-        let by_hash_base = file_path
-            .parent()
-            .expect("all files needs a parent(?)")
-            .to_owned();
+    pub fn create_metadata_download(&self, url: CompactString, file_path: FilePath, file_entry: FileEntry, by_hash: bool) -> Result<Box<Download>> {
+        let by_hash_base = FilePath(
+            file_path
+                .parent()
+                .expect("all files needs a parent(?)")
+                .to_compact_string()
+        );
 
         let size = file_entry.size;
 
@@ -161,46 +161,60 @@ impl Repository {
     }
 }
 
+fn sanitize_path_part(part: &str) -> CompactString {
+    let mut sanitized = CompactString::new("");
 
-fn create_tmp_dir(url: &Url, suite: &str, base_dir: &Path) -> Result<PathBuf> {
+    let mut char_iter = part.chars();
+
+    while let Some(c) = char_iter.next() {
+        if c == '/' {
+            sanitized.push('_')
+        } else {
+            sanitized.push(c)
+        }
+    }
+
+    sanitized
+}
+
+fn create_tmp_dir(url: &Url, suite: &str, base_dir: &FilePath) -> Result<FilePath> {
     let Some(host) = url.host() else {
-        return Err(MirsError::UrlParsing { url: url.to_string() })
+        return Err(MirsError::UrlParsing { url: url.to_compact_string() })
     };
 
     let path = url.path();
 
     let path_part = if path == "/" {
-        String::new()
+        CompactString::new("")
     } else {
-        path.replace('/', "_")
+        sanitize_path_part(path)
     };
 
     let tmp_dir = base_dir
-        .join(".tmp")
-        .join(format!("{host}{path_part}_{suite}"));
+        .join(format_compact!(".tmp/{host}{path_part}_{suite}"));
 
     match std::fs::metadata(&tmp_dir) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             std::fs::create_dir_all(&tmp_dir)?;
             Ok(tmp_dir)
         },
-        Err(e) => Err(MirsError::Tmp { msg: e.to_string() }),
+        Err(e) => Err(MirsError::Tmp { msg: e.to_compact_string() }),
         Ok(_) => Err(MirsError::Tmp { 
-            msg: format!(
+            msg: format_compact!(
                 "tmp folder already exists for this repository. aptmirs is probably currently running. if it is not, delete {}",
-                tmp_dir.to_string_lossy()
+                tmp_dir.as_str()
             )
         })
     }
 }
 
-fn local_dir_from_archive_url(url: &Url, dir: &Path) -> Result<PathBuf> {
+fn local_dir_from_archive_url(url: &Url, dir: &FilePath) -> Result<FilePath> {
     let Some(host) = url.host() else {
-        return Err(MirsError::UrlParsing { url: url.to_string() })
+        return Err(MirsError::UrlParsing { url: url.to_compact_string() })
     };
 
     let mut base_dir = dir
-        .join(host.to_string());
+        .join(host.to_compact_string());
 
     if let Some(path) = url.path().strip_prefix('/') {
         base_dir = base_dir.join(path);

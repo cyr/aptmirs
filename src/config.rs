@@ -1,11 +1,12 @@
-use std::{path::Path, fmt::Display, cmp::Ordering};
+use std::{fmt::Display, cmp::Ordering};
+use compact_str::{format_compact, CompactString};
 use tokio::io::{BufReader, AsyncBufReadExt};
 
-use crate::error::{Result, MirsError};
+use crate::{error::{MirsError, Result}, metadata::FilePath};
 
-pub async fn read_config(path: &Path) -> Result<Vec<MirrorOpts>> {
+pub async fn read_config(path: &FilePath) -> Result<Vec<MirrorOpts>> {
     let file = tokio::fs::File::open(path).await
-        .map_err(|e| MirsError::Config { msg: format!("could not read {}: {e}", path.display()) })?;
+        .map_err(|e| MirsError::Config { msg: format_compact!("could not read {path}: {e}") })?;
 
     let mut reader = BufReader::with_capacity(8192, file);
 
@@ -132,14 +133,14 @@ impl MirrorOpts {
         } else if let Some(line) = line.strip_prefix("deb") {
             line
         } else {
-            return Err(MirsError::Config { msg: String::from("mirror config must start with either 'deb' or 'deb-src'") })
+            return Err(MirsError::Config { msg: CompactString::new("mirror config must start with either 'deb' or 'deb-src'") })
         };
 
         line = line.trim_start();
 
         if line.starts_with('[') {
             let Some(bracket_end) = line.find(']') else {
-                return Err(MirsError::Config { msg: String::from("options bracket is not closed") })
+                return Err(MirsError::Config { msg: CompactString::new("options bracket is not closed") })
             };
 
             let options_line = &line[..bracket_end];
@@ -148,11 +149,11 @@ impl MirrorOpts {
                 let mut opt_parts = part.split('=');
 
                 let Some(opt_key) = opt_parts.next() else {
-                    return Err(MirsError::Config { msg: String::from("invalid format of options bracket") })
+                    return Err(MirsError::Config { msg: CompactString::new("invalid format of options bracket") })
                 };
 
                 let Some(opt_val) = opt_parts.next() else {
-                    return Err(MirsError::Config { msg: format!("empty value of option key {opt_key}") })
+                    return Err(MirsError::Config { msg: format_compact!("{opt_key} has no value") })
                 };
 
                 if opt_key == "arch" {
@@ -166,11 +167,11 @@ impl MirrorOpts {
         let mut line_parts = line.split_whitespace();
 
         let Some(url) = line_parts.next() else {
-            return Err(MirsError::Config { msg: String::from("no url specified") })
+            return Err(MirsError::Config { msg: CompactString::new_inline("no url specified") })
         };
 
         let Some(suite) = line_parts.next() else {
-            return Err(MirsError::Config { msg: String::from("no suite specified") })
+            return Err(MirsError::Config { msg: CompactString::new_inline("no suite specified") })
         };
 
         let components = line_parts
@@ -178,7 +179,7 @@ impl MirrorOpts {
             .collect::<Vec<_>>();
 
         if components.is_empty() {
-            return Err(MirsError::Config { msg: String::from("no components specified") })
+            return Err(MirsError::Config { msg: CompactString::new_inline("no components specified") })
         }
 
         if arch.is_empty() {

@@ -1,19 +1,21 @@
-use std::{path::{Path, PathBuf}, fs::File, io::BufRead, sync::{atomic::AtomicU64, Arc}};
+use std::{fs::File, io::BufRead, sync::{atomic::AtomicU64, Arc}};
+
+use compact_str::ToCompactString;
 
 use crate::error::{Result, MirsError};
 
-use super::{checksum::{Checksum, ChecksumType}, create_reader, IndexFileEntry, IndexFileEntryIterator};
+use super::{checksum::{Checksum, ChecksumType}, create_reader, FilePath, IndexFileEntry, IndexFileEntryIterator};
 
 pub struct PackagesFile {
     reader: Box<dyn BufRead>,
-    path: PathBuf,
+    path: FilePath,
     buf: String,
     size: u64,
     read: Arc<AtomicU64>
 }
 
 impl PackagesFile {
-    pub fn build(path: &Path) -> Result<Box<dyn IndexFileEntryIterator>> {
+    pub fn build(path: &FilePath) -> Result<Box<dyn IndexFileEntryIterator>> {
         let file = File::open(path)?;
         let size = file.metadata()?.len();
 
@@ -21,7 +23,7 @@ impl PackagesFile {
 
         Ok(Box::new(Self {
             reader,
-            path: path.to_path_buf(),
+            path: path.to_owned(),
             buf: String::with_capacity(1024*8),
             size,
             read: counter,
@@ -53,7 +55,7 @@ impl Iterator for PackagesFile {
                 }
                 Err(e) => return Some(Err(
                     MirsError::ReadingPackage { 
-                        path: self.path.to_string_lossy().to_string(), 
+                        path: self.path.clone(), 
                         inner: Box::new(e.into()) 
                     }
                 ))
@@ -66,7 +68,7 @@ impl Iterator for PackagesFile {
 
         for line in self.buf.lines() {
             if let Some(filename) = line.strip_prefix("Filename: ") {
-                path = Some(filename.to_string())
+                path = Some(filename.to_compact_string())
             } else if let Some(line_size) = line.strip_prefix("Size: ") {
                 size = Some(line_size.parse().expect("value of Size should be an integer"))
             } else if let Some(line_hash) = line.strip_prefix("MD5Sum: ") {

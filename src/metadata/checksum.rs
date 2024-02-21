@@ -1,4 +1,4 @@
-use std::{fmt::Display, path::Path};
+use std::fmt::Display;
 
 use md5::Context;
 use sha1::{Sha1, Digest, digest::{FixedOutput, Update}};
@@ -6,6 +6,8 @@ use sha2::{Sha256, Sha512};
 use tokio::io::AsyncReadExt;
 
 use crate::error::{Result, MirsError};
+
+use super::FilePath;
 
 #[derive(Debug, PartialEq)]
 pub enum Checksum {
@@ -90,7 +92,7 @@ impl Checksum {
         }
     }
 
-    pub async fn checksum_file(file: &Path) -> Result<Checksum> {
+    pub async fn checksum_file(file: &FilePath) -> Result<Checksum> {
         let mut f = tokio::fs::File::open(file).await?;
         
         let mut buf = vec![0_u8; 8192];

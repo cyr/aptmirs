@@ -1,8 +1,10 @@
-use std::{path::{Path, PathBuf}, fs::File, io::BufRead, sync::{atomic::AtomicU64, Arc}, collections::BTreeMap};
+use std::{fs::File, io::BufRead, sync::{atomic::AtomicU64, Arc}, collections::BTreeMap};
+
+use compact_str::{format_compact, CompactString};
 
 use crate::error::{Result, MirsError};
 
-use super::{checksum::Checksum, create_reader, IndexFileEntry, IndexFileEntryIterator};
+use super::{checksum::Checksum, create_reader, FilePath, IndexFileEntry, IndexFileEntryIterator};
 
 pub struct SourceEntry {
     pub size: u64,
@@ -11,15 +13,15 @@ pub struct SourceEntry {
 
 pub struct SourcesFile {
     reader: Box<dyn BufRead>,
-    path: PathBuf,
+    path: FilePath,
     buf: String,
-    files_buf: BTreeMap<String, SourceEntry>,
+    files_buf: BTreeMap<CompactString, SourceEntry>,
     size: u64,
     read: Arc<AtomicU64>
 }
 
 impl SourcesFile {
-    pub fn build(path: &Path) -> Result<Box<dyn IndexFileEntryIterator>> {
+    pub fn build(path: &FilePath) -> Result<Box<dyn IndexFileEntryIterator>> {
         let file = File::open(path)?;
         let size = file.metadata()?.len();
 
@@ -27,7 +29,7 @@ impl SourcesFile {
 
         Ok(Box::new(Self {
             reader,
-            path: path.to_path_buf(),
+            path: path.to_owned(),
             buf: String::with_capacity(1024*8),
             files_buf: BTreeMap::new(),
             size,
@@ -58,7 +60,7 @@ impl Iterator for SourcesFile {
                     Ok(_) => (),
                     Err(e) => return Some(Err(
                         MirsError::ReadingPackage { 
-                            path: self.path.to_string_lossy().to_string(), 
+                            path: self.path.clone(), 
                             inner: Box::new(e.into()) 
                         }
                     ))
@@ -99,7 +101,7 @@ impl Iterator for SourcesFile {
                         };
     
                         let rel_path = if let Some(dir) = dir {
-                            format!("{dir}/{file_name}")
+                            format_compact!("{dir}/{file_name}")
                         } else {
                             return Some(Err(MirsError::ParsingSources { path: self.path.clone() }))
                         };

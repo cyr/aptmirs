@@ -1,12 +1,13 @@
-use std::{num::ParseIntError, path::PathBuf};
+use std::num::ParseIntError;
 
 use async_channel::SendError;
+use compact_str::CompactString;
 use hex::FromHexError;
 use reqwest::StatusCode;
 use thiserror::Error;
 use tokio::task::JoinError;
 
-use crate::mirror::downloader::Download;
+use crate::{metadata::FilePath, mirror::downloader::Download};
 
 pub type Result<T> = std::result::Result<T, MirsError>;
 
@@ -22,10 +23,10 @@ pub enum MirsError {
     ParseInt(#[from]ParseIntError),
 
     #[error("failed to download {url}: {status_code}")]
-    Download { url: String, status_code: StatusCode },
+    Download { url: CompactString, status_code: StatusCode },
 
     #[error("failed to parse line {line}")]
-    ParsingRelease { line: String },
+    ParsingRelease { line: CompactString },
 
     #[error("invalid release file: {inner}")]
     InvalidReleaseFile { inner: Box<MirsError> },
@@ -37,22 +38,22 @@ pub enum MirsError {
     NoReleaseFile,
 
     #[error("unable to parse packages file {path}")]
-    ParsingPackages { path: PathBuf },
+    ParsingPackages { path: FilePath },
 
     #[error("unable to parse sources file {path}")]
-    ParsingSources { path: PathBuf },
+    ParsingSources { path: FilePath },
 
     #[error("unable to parse index diff file {path}")]
-    ParsingDiffIndex { path: PathBuf },
+    ParsingDiffIndex { path: FilePath },
 
     #[error("unable to parse url {url}")]
-    UrlParsing { url: String },
+    UrlParsing { url: CompactString },
 
     #[error("{msg}")]
-    Config { msg: String },
+    Config { msg: CompactString },
 
     #[error("could not create a tmp folder: {msg}")]
-    Tmp { msg: String},
+    Tmp { msg: CompactString},
 
     #[error(transparent)]
     Hex(#[from]FromHexError),
@@ -61,7 +62,7 @@ pub enum MirsError {
     IntoChecksum { value: String },
 
     #[error("checksum failed for: {url}, expected hash: {expected}, calculated hash: {hash}")]
-    Checksum { url: String, expected: String, hash: String },
+    Checksum { url: CompactString, expected: CompactString, hash: String },
     
     #[error(transparent)]
     TokioJoin(#[from]JoinError),
@@ -82,5 +83,5 @@ pub enum MirsError {
     Finalize { inner: Box<MirsError> },
 
     #[error("error reading {path}: {inner}")]
-    ReadingPackage { path: String, inner: Box<MirsError> }
+    ReadingPackage { path: FilePath, inner: Box<MirsError> }
 }

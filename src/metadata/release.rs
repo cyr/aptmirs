@@ -1,19 +1,20 @@
 use std::{path::{Path, Component}, collections::{BTreeMap, BTreeSet}};
 
+use compact_str::{format_compact, CompactString, ToCompactString};
 use tokio::{fs::File, io::{BufReader, AsyncBufReadExt}};
 
 use crate::{error::{Result, MirsError}, config::MirrorOpts, CliOpts};
 
-use super::checksum::Checksum;
+use super::{checksum::Checksum, FilePath};
 
 #[derive(Debug)]
 pub struct Release {
-    map: BTreeMap<String, String>,
-    pub files: BTreeMap<String, FileEntry>
+    map: BTreeMap<CompactString, CompactString>,
+    pub files: BTreeMap<CompactString, FileEntry>
 }
 
 impl Release {
-    pub async fn parse(path: &Path) -> Result<Release> {
+    pub async fn parse(path: &FilePath) -> Result<Release> {
         let file = File::open(path).await?;
         let file_size = file.metadata().await?.len();
 
@@ -26,7 +27,7 @@ impl Release {
         let mut checksum_state = ChecksumState::No;
 
         let mut map = BTreeMap::new();
-        let mut files = BTreeMap::<String, FileEntry>::new();
+        let mut files = BTreeMap::<CompactString, FileEntry>::new();
 
         loop {
             buf.clear();
@@ -44,7 +45,7 @@ impl Release {
                     let file_line = FileLine::parse(v)?;
 
                     if !files.contains_key(file_line.path) {
-                        files.insert(file_line.path.to_string(), 
+                        files.insert(file_line.path.to_compact_string(), 
                             FileEntry { 
                                 size: file_line.size,
                                 md5: None,
@@ -78,7 +79,7 @@ impl Release {
                             hex::decode_to_slice(file_line.checksum, &mut checksum)?;
                             entry.md5 = Some(checksum);
                         },
-                        ChecksumState::No => return Err(MirsError::ParsingRelease { line: v.to_string() }),
+                        ChecksumState::No => return Err(MirsError::ParsingRelease { line: v.to_compact_string() }),
                         _ => continue
                     };
                 },
@@ -90,9 +91,9 @@ impl Release {
                     checksum_state = ChecksumState::No;
 
                     let (k, v) = v.split_once(": ")
-                        .ok_or_else(|| MirsError::ParsingRelease { line: v.to_string() })?;
+                        .ok_or_else(|| MirsError::ParsingRelease { line: v.to_compact_string() })?;
 
-                    map.insert(k.to_string(), v.to_string());
+                    map.insert(k.to_compact_string(), v.to_compact_string());
                 },
                 Line::Md5Start              => checksum_state = ChecksumState::Md5,
                 Line::Sha1Start             => checksum_state = ChecksumState::Sha1,
@@ -118,11 +119,11 @@ impl Release {
 
     pub fn acquire_by_hash(&self) -> bool {
         self.map.get("Acquire-By-Hash")
-            .map(|v|v == "yes")
+            .map(|v| v.as_str() == "yes")
             .unwrap_or(false)
     }
 
-    pub fn components(&self) -> Option<&String> {
+    pub fn components(&self) -> Option<&CompactString> {
         self.map.get("Components")
     }
 
@@ -148,60 +149,59 @@ impl Release {
 pub struct ReleaseFileIterator<'a> {
     release: Release,
     opts: &'a MirrorOpts,
-    file_prefix_filter: Vec<String>,
-    dir_filter: BTreeSet<String>
+    file_prefix_filter: Vec<CompactString>,
+    dir_filter: BTreeSet<CompactString>
 }
 
 impl<'a> ReleaseFileIterator<'a> {
     pub fn new(release: Release, opts: &'a MirrorOpts, cli_opts: &'a CliOpts) -> Self {
         let (file_prefix_filter, dir_filter) = if opts.source {
             let file_prefix_filter = Vec::from([
-                String::from("Release"),
-                String::from("Sources"),
+                CompactString::new_inline("Release"),
+                CompactString::new_inline("Sources"),
             ]);
             
             let dir_filter = BTreeSet::from([
-                String::from("source"),
+                CompactString::new_inline("source"),
             ]);
 
             (file_prefix_filter, dir_filter)
         } else {
             let mut file_prefix_filter = Vec::from([
-                String::from("Release"),
-                String::from("Contents-all"),
-                String::from("Components-all"),
-                String::from("Commands-all"),
-                String::from("Packages"),
-                String::from("icons"),
-                String::from("Translation"),
-                String::from("Index"),
+                CompactString::new_inline("Release"),
+                CompactString::new_inline("Contents-all"),
+                CompactString::new_inline("Components-all"),
+                CompactString::new_inline("Commands-all"),
+                CompactString::new_inline("Packages"),
+                CompactString::new_inline("icons"),
+                CompactString::new_inline("Translation"),
+                CompactString::new_inline("Index"),
             ]);
             
             let mut dir_filter = BTreeSet::from([
-                String::from("dep11"),
-                String::from("i18n"),
-                String::from("binary-all"),
-                String::from("cnf"),
-                String::from("Contents-all.diff"),
-                String::from("Packages.diff"),
+                CompactString::new_inline("dep11"),
+                CompactString::new_inline("i18n"),
+                CompactString::new_inline("binary-all"),
+                CompactString::new_inline("cnf"),
+                CompactString::new_inline("Contents-all.diff"),
+                CompactString::new_inline("Packages.diff"),
             ]);
 
             if cli_opts.udeb {
-                file_prefix_filter.push(String::from("Contents-udeb-all"));
-                dir_filter.insert(String::from("debian-installer"));
+                file_prefix_filter.push(CompactString::new_inline("Contents-udeb-all"));
+                dir_filter.insert(CompactString::new_inline("debian-installer"));
             }
 
             for arch in &opts.arch {
-                dir_filter.insert(format!("binary-{arch}"));
-                dir_filter.insert(format!("Contents-{arch}.diff"));
+                dir_filter.insert(format_compact!("binary-{arch}"));
+                dir_filter.insert(format_compact!("Contents-{arch}.diff"));
 
-
-                file_prefix_filter.push(format!("Components-{arch}"));
-                file_prefix_filter.push(format!("Contents-{arch}"));
-                file_prefix_filter.push(format!("Commands-{arch}"));
+                file_prefix_filter.push(format_compact!("Components-{arch}"));
+                file_prefix_filter.push(format_compact!("Contents-{arch}"));
+                file_prefix_filter.push(format_compact!("Commands-{arch}"));
 
                 if cli_opts.udeb {
-                    file_prefix_filter.push(format!("Contents-udeb-{arch}"));
+                    file_prefix_filter.push(format_compact!("Contents-udeb-{arch}"));
                 }
             }
             
@@ -218,7 +218,7 @@ impl<'a> ReleaseFileIterator<'a> {
 }
 
 impl<'a> Iterator for ReleaseFileIterator<'a> {
-    type Item = (String, FileEntry);
+    type Item = (CompactString, FileEntry);
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -244,7 +244,7 @@ impl<'a> Iterator for ReleaseFileIterator<'a> {
                             .expect("path should be utf8");
 
                         if parts.peek().is_none() {
-                            if self.file_prefix_filter.iter().any(|v| part_name.starts_with(v)) {
+                            if self.file_prefix_filter.iter().any(|v| part_name.starts_with(v.as_str())) {
                                 return Some((path, file_entry))
                             }
 
@@ -274,15 +274,15 @@ impl<'a> FileLine<'a> {
         let mut parts = value.split_ascii_whitespace();
 
         let checksum = parts.next()
-            .ok_or_else(|| MirsError::ParsingRelease { line: value.to_string() })?;
+            .ok_or_else(|| MirsError::ParsingRelease { line: value.to_compact_string() })?;
 
         let size = parts.next()
-            .ok_or_else(|| MirsError::ParsingRelease { line: value.to_string() })?
+            .ok_or_else(|| MirsError::ParsingRelease { line: value.to_compact_string() })?
             .parse()
-            .map_err(|_| MirsError::ParsingRelease { line: value.to_string() })?;
+            .map_err(|_| MirsError::ParsingRelease { line: value.to_compact_string() })?;
 
         let path = parts.next()
-            .ok_or_else(|| MirsError::ParsingRelease { line: value.to_string() })?;
+            .ok_or_else(|| MirsError::ParsingRelease { line: value.to_compact_string() })?;
 
         Ok(Self {
             path,

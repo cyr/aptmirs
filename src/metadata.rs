@@ -1,4 +1,7 @@
-use std::{io::{Read, BufRead, BufReader}, sync::{Arc, atomic::{AtomicU64, Ordering}}, path::{Path, PathBuf}};
+use std::{ffi::OsStr, fmt::Display, fs::Metadata, io::{BufRead, BufReader, Read}, path::Path, str::FromStr, sync::{atomic::{AtomicU64, Ordering}, Arc}};
+
+use compact_str::{format_compact, CompactString, ToCompactString};
+
 
 use crate::error::{Result, MirsError};
 
@@ -10,9 +13,96 @@ pub mod sources_file;
 pub mod checksum;
 pub mod diff_index_file;
 
+#[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
+pub struct FilePath(pub CompactString);
+
+impl FromStr for FilePath {
+    type Err = MirsError;
+
+    fn from_str(s: &str) -> std::prelude::v1::Result<Self, Self::Err> {
+        Ok(FilePath(s.to_compact_string()))
+    }
+}
+
+impl AsRef<Path> for FilePath {
+    fn as_ref(&self) -> &Path {
+        self.0.as_str().as_ref()
+    }
+}
+
+impl AsRef<str> for FilePath {
+    fn as_ref(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl Display for FilePath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl FilePath {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn file_stem(&self) -> Option<&OsStr> {
+        let p: &Path = self.as_ref();
+
+        p.file_stem()
+    }
+
+    pub fn file_name(&self) -> Option<&OsStr> {
+        let p: &Path = self.as_ref();
+
+        p.file_name()
+    }
+
+    pub fn exists(&self) -> bool {
+        self.metadata().is_ok()
+    }
+
+    pub fn extension(&self) -> Option<&OsStr> {
+        let p: &Path = self.as_ref();
+
+        p.extension()
+    }
+
+    pub fn metadata(&self) -> std::result::Result<Metadata, std::io::Error> {
+        let p: &Path = self.as_ref();
+
+        p.metadata()
+    }
+
+    pub fn parent(&self) -> Option<&str> {
+        let Some(split_iter) = &self.0.rsplit_once('/') else {
+            return None
+        };
+        
+        Some(split_iter.0)
+    }
+
+    pub fn join<T: AsRef<str>>(&self, other: T) -> FilePath {
+        let first = match self.0.strip_suffix('/') {
+            Some(s) => s,
+            None => &self.0,
+        };
+
+        let other = other.as_ref();
+
+        let other = match other.strip_prefix('/') {
+            Some(s) => s,
+            None => other
+        };
+
+        FilePath(format_compact!("{first}/{other}"))
+    }
+}
+
 pub enum IndexSource {
-    Packages(PathBuf),
-    Sources(PathBuf)
+    Packages(FilePath),
+    Sources(FilePath)
 }
 
 impl IndexSource {
@@ -24,8 +114,8 @@ impl IndexSource {
     }
 }
 
-impl From<PathBuf> for IndexSource {
-    fn from(value: PathBuf) -> Self {
+impl From<FilePath> for IndexSource {
+    fn from(value: FilePath) -> Self {
         match value.file_name().expect("indices should have names")
             .to_str().expect("the file name of indices should be valid utf8") {
             v if v.starts_with("Packages") => IndexSource::Packages(value),
@@ -41,7 +131,7 @@ pub trait IndexFileEntryIterator : Iterator<Item = Result<IndexFileEntry>> {
 }
 
 pub struct IndexFileEntry {
-    pub path: String,
+    pub path: CompactString,
     pub size: u64,
     pub checksum: Option<Checksum>
 }
@@ -62,7 +152,7 @@ impl<R: Read> Read for TrackingReader<R> {
     }
 }
 
-pub fn create_reader<R: Read + 'static>(file: R, path: &Path) -> Result<(Box<dyn BufRead>, Arc<AtomicU64>)> {
+pub fn create_reader<R: Read + 'static>(file: R, path: &FilePath) -> Result<(Box<dyn BufRead>, Arc<AtomicU64>)> {
     let counter = Arc::new(AtomicU64::from(0));
 
     let file_reader = TrackingReader {

@@ -1,17 +1,18 @@
-use std::{collections::BTreeMap, path::Path};
+use std::collections::BTreeMap;
 
+use compact_str::{CompactString, ToCompactString};
 use tokio::{fs::File, io::{AsyncBufReadExt, BufReader}};
 
-use crate::error::Result;
+use crate::error::{MirsError, Result};
 
-use super::{checksum::Checksum, release::FileEntry};
+use super::{checksum::Checksum, release::FileEntry, FilePath};
 
 pub struct DiffIndexFile {
-    pub files: BTreeMap<String, FileEntry>
+    pub files: BTreeMap<CompactString, FileEntry>
 }
 
 impl DiffIndexFile {
-    pub async fn parse(path: &Path) -> Result<DiffIndexFile> {
+    pub async fn parse(path: &FilePath) -> Result<DiffIndexFile> {
         let file = File::open(path).await?;
         let file_size = file.metadata().await?.len();
 
@@ -45,13 +46,13 @@ impl DiffIndexFile {
                     let mut split = line.split_ascii_whitespace();
 
                     let (Some(hash), Some(size), Some(path)) = (split.next(), split.next(), split.next()) else {
-                        return Err(crate::error::MirsError::ParsingDiffIndex { path: path.to_path_buf() })
+                        return Err(MirsError::ParsingDiffIndex { path: path.to_owned() })
                     };
 
                     let size = size.parse()?;
 
                     if !files.contains_key(path) {
-                        files.insert(path.to_string(), 
+                        files.insert(path.to_compact_string(), 
                             FileEntry { 
                                 size,
                                 md5: None,
