@@ -235,7 +235,7 @@ impl<'a> Iterator for ReleaseFileIterator<'a> {
                     let component = component.to_str()
                         .expect("path should be utf8");
 
-                    if !self.opts.components.iter().any(|v| v == component) {
+                    if !self.opts.components.iter().any(|v| v.as_str() == component) {
                         continue
                     }
 

@@ -1,5 +1,5 @@
-use std::{fmt::Display, cmp::Ordering};
-use compact_str::{format_compact, CompactString};
+use std::{cmp::Ordering, fmt::Display};
+use compact_str::{format_compact, CompactString, ToCompactString};
 use tokio::io::{BufReader, AsyncBufReadExt};
 
 use crate::{error::{MirsError, Result}, metadata::FilePath};
@@ -48,7 +48,7 @@ pub async fn read_config(path: &FilePath) -> Result<Vec<MirrorOpts>> {
 fn merge_similar(mut mirrors: Vec<MirrorOpts>) -> Vec<MirrorOpts> {
     for mirror in mirrors.iter_mut() {
         mirror.arch.sort();
-        mirror.components.sort();
+        mirror.components.sort_unstable();
     }
 
     mirrors.sort();
@@ -72,10 +72,10 @@ fn merge_similar(mut mirrors: Vec<MirrorOpts>) -> Vec<MirrorOpts> {
 
 #[derive(Eq)]
 pub struct MirrorOpts {
-    pub url: String,
-    pub suite: String,
-    pub components: Vec<String>,
-    pub arch: Vec<String>,
+    pub url: CompactString,
+    pub suite: CompactString,
+    pub components: Vec<CompactString>,
+    pub arch: Vec<CompactString>,
     pub source: bool,
 }
 
@@ -157,7 +157,7 @@ impl MirrorOpts {
                 };
 
                 if opt_key == "arch" {
-                    arch.push(opt_val.to_string())
+                    arch.push(opt_val.to_compact_string())
                 }
             }
         }
@@ -175,7 +175,7 @@ impl MirrorOpts {
         };
 
         let components = line_parts
-            .map(|v| v.to_owned())
+            .map(|v| v.to_compact_string())
             .collect::<Vec<_>>();
 
         if components.is_empty() {
@@ -183,12 +183,12 @@ impl MirrorOpts {
         }
 
         if arch.is_empty() {
-            arch.push("amd64".to_string())
+            arch.push("amd64".to_compact_string())
         }
 
         Ok(Self {
-            url: url.to_owned(),
-            suite: suite.to_owned(),
+            url: url.to_compact_string(),
+            suite: suite.to_compact_string(),
             components,
             arch,
             source
