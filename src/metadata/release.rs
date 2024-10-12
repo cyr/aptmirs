@@ -102,7 +102,7 @@ impl Release {
                 Line::PGPSignedMessageStart => checksum_state = ChecksumState::PgpMessage,
                 Line::PGPSignatureStart     => checksum_state = ChecksumState::PgpSignature,
                 Line::PGPSignatureEnd       => checksum_state = ChecksumState::No,
-                Line::Unknown(_)            => {
+                Line::Unknown               => {
                     match checksum_state {
                         ChecksumState::PgpSignature => (),
                         _ => checksum_state = ChecksumState::No
@@ -157,39 +157,39 @@ impl<'a> ReleaseFileIterator<'a> {
     pub fn new(release: Release, opts: &'a MirrorOpts, cli_opts: &'a CliOpts) -> Self {
         let (file_prefix_filter, dir_filter) = if opts.source {
             let file_prefix_filter = Vec::from([
-                CompactString::new_inline("Release"),
-                CompactString::new_inline("Sources"),
+                CompactString::const_new("Release"),
+                CompactString::const_new("Sources"),
             ]);
             
             let dir_filter = BTreeSet::from([
-                CompactString::new_inline("source"),
+                CompactString::const_new("source"),
             ]);
 
             (file_prefix_filter, dir_filter)
         } else {
             let mut file_prefix_filter = Vec::from([
-                CompactString::new_inline("Release"),
-                CompactString::new_inline("Contents-all"),
-                CompactString::new_inline("Components-all"),
-                CompactString::new_inline("Commands-all"),
-                CompactString::new_inline("Packages"),
-                CompactString::new_inline("icons"),
-                CompactString::new_inline("Translation"),
-                CompactString::new_inline("Index"),
+                CompactString::const_new("Release"),
+                CompactString::const_new("Contents-all"),
+                CompactString::const_new("Components-all"),
+                CompactString::const_new("Commands-all"),
+                CompactString::const_new("Packages"),
+                CompactString::const_new("icons"),
+                CompactString::const_new("Translation"),
+                CompactString::const_new("Index"),
             ]);
             
             let mut dir_filter = BTreeSet::from([
-                CompactString::new_inline("dep11"),
-                CompactString::new_inline("i18n"),
-                CompactString::new_inline("binary-all"),
-                CompactString::new_inline("cnf"),
-                CompactString::new_inline("Contents-all.diff"),
-                CompactString::new_inline("Packages.diff"),
+                CompactString::const_new("dep11"),
+                CompactString::const_new("i18n"),
+                CompactString::const_new("binary-all"),
+                CompactString::const_new("cnf"),
+                CompactString::const_new("Contents-all.diff"),
+                CompactString::const_new("Packages.diff"),
             ]);
 
             if cli_opts.udeb {
-                file_prefix_filter.push(CompactString::new_inline("Contents-udeb-all"));
-                dir_filter.insert(CompactString::new_inline("debian-installer"));
+                file_prefix_filter.push(CompactString::const_new("Contents-udeb-all"));
+                dir_filter.insert(CompactString::const_new("debian-installer"));
             }
 
             for arch in &opts.arch {
@@ -323,7 +323,7 @@ pub enum Line<'a> {
     Sha512Start,
     FileEntry(&'a str),
     Metadata(&'a str),
-    Unknown(&'a str),
+    Unknown,
     PGPSignedMessageStart,
     PGPSignatureStart,
     PGPSignatureEnd
@@ -341,7 +341,7 @@ impl<'a> From<&'a str> for Line<'a> {
             "-----BEGIN PGP SIGNATURE-----"      => Line::PGPSignatureStart,
             "-----END PGP SIGNATURE-----"        => Line::PGPSignatureEnd,
             v if v.contains(':')           => Line::Metadata(v),
-            v                              => Line::Unknown(v)
+            _                                    => Line::Unknown
         }
     }
 }

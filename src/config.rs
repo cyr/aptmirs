@@ -144,16 +144,11 @@ impl MirrorOpts {
             };
 
             let options_line = &line[..bracket_end];
+            line = &line[bracket_end+1..];
 
             for part in options_line.split(' ') {
-                let mut opt_parts = part.split('=');
-
-                let Some(opt_key) = opt_parts.next() else {
+                let Some((opt_key, opt_val)) = part.split_once('=') else {
                     return Err(MirsError::Config { msg: CompactString::new("invalid format of options bracket") })
-                };
-
-                let Some(opt_val) = opt_parts.next() else {
-                    return Err(MirsError::Config { msg: format_compact!("{opt_key} has no value") })
                 };
 
                 if opt_key == "arch" {
@@ -167,11 +162,11 @@ impl MirrorOpts {
         let mut line_parts = line.split_whitespace();
 
         let Some(url) = line_parts.next() else {
-            return Err(MirsError::Config { msg: CompactString::new_inline("no url specified") })
+            return Err(MirsError::Config { msg: CompactString::const_new("no url specified") })
         };
 
         let Some(suite) = line_parts.next() else {
-            return Err(MirsError::Config { msg: CompactString::new_inline("no suite specified") })
+            return Err(MirsError::Config { msg: CompactString::const_new("no suite specified") })
         };
 
         let components = line_parts
@@ -179,7 +174,7 @@ impl MirrorOpts {
             .collect::<Vec<_>>();
 
         if components.is_empty() {
-            return Err(MirsError::Config { msg: CompactString::new_inline("no components specified") })
+            return Err(MirsError::Config { msg: CompactString::const_new("no components specified") })
         }
 
         if arch.is_empty() {

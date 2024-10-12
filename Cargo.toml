@@ -7,23 +7,23 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-async-channel = "2.1.1"
+async-channel = "2.3.1"
 bzip2 = "0.4.4"
-chrono = "0.4.31"
-clap = { version = "4.4.11", features = ["cargo", "derive", "env"] }
-compact_str = { version = "0.7.1", features = ["serde"] }
-console = "0.15.7"
-flate2 = "1.0.28"
+chrono = "0.4.38"
+clap = { version = "4.5.20", features = ["cargo", "derive", "env"] }
+compact_str = { version = "0.8.0", features = ["serde"] }
+console = "0.15.8"
+flate2 = "1.0.34"
 hex = "0.4.3"
-indicatif = "0.17.7"
+indicatif = "0.17.8"
 md5 = "0.7.0"
 pathdiff = "0.2.1"
-regex = "1.10.2"
-reqwest = { version = "0.11.23", features = ["rustls", "rustls-native-certs"] }
+regex = "1.11.0"
+reqwest = { version = "0.12.8", features = ["rustls-tls"] }
 sha1 = "0.10.6"
 sha2 = "0.10.8"
-thiserror = "1.0.52"
-tokio = { version = "1.35.1", features = ["macros", "rt-multi-thread", "fs"] }
+thiserror = "1.0.64"
+tokio = { version = "1.40.0", features = ["macros", "rt-multi-thread", "fs"] }
 xz2 = "0.1.7"
 
 [profile.release]

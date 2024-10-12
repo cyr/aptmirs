@@ -8,7 +8,7 @@ pub const TOTAL_STEPS: u8 = 4;
 
 #[derive(Clone)]
 pub struct Progress {
-    step: Arc<AtomicU8>,
+    pub step: Arc<AtomicU8>,
     step_name: Arc<Mutex<String>>,
     pub files: ProgressPart,
     pub bytes: ProgressPart,
@@ -109,7 +109,7 @@ impl Progress {
     pub fn reset(&mut self) {
         self.bytes.reset();
         self.files.reset();
-        self.step = Arc::new(AtomicU8::new(0));
+        self.step.store(0, Ordering::SeqCst);
     }
 
     pub async fn next_step(&mut self, step_name: &str) {
