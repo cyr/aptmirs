@@ -28,6 +28,18 @@ Architecture can be specified with [arch=value]. The default value is *amd64*.
 deb [arch=amd64] http://ftp.se.debian.org/debian  bookworm  main contrib non-free non-free-firmware
 ```
 
+To download debian installer image data, specify *di_arch* with the appropriate architecture.
+
+```
+deb [di_arch=amd64] http://ftp.se.debian.org/debian  bookworm  main contrib non-free non-free-firmware
+```
+
+Multiple options can be added inside the same bracket.
+
+```
+deb [arch=amd64 arch=arm64 di_arch=amd64] http://ftp.se.debian.org/debian  bookworm  main contrib non-free non-free-firmware
+```
+
 ## Usage
 
 ```

@@ -9,6 +9,7 @@ use compact_str::format_compact;
 use indicatif::{MultiProgress, HumanBytes};
 
 use crate::metadata::diff_index_file::DiffIndexFile;
+use crate::metadata::sum_file::{to_strongest_by_checksum, SumFileEntry};
 use crate::CliOpts;
 use crate::config::MirrorOpts;
 use crate::error::{Result, MirsError};
@@ -50,6 +51,10 @@ pub async fn mirror(opts: &MirrorOpts, cli_opts: &CliOpts, downloader: &mut Down
     let mut progress = downloader.progress();
     progress.reset();
 
+    if opts.debian_installer() {
+        progress.set_total_steps(5);
+    }
+
     let mut total_download_size = 0_u64;
 
     progress.next_step("Downloading release").await;
@@ -80,9 +85,9 @@ pub async fn mirror(opts: &MirrorOpts, cli_opts: &CliOpts, downloader: &mut Down
 
     progress.next_step("Downloading indices").await;
 
-    let (indices, diff_indices) = match download_indices(release, opts, cli_opts, &mut progress, &repo, downloader).await {
-        Ok((indices, diff_indices)) if indices.is_empty() && diff_indices.is_empty() => {
-            repo.finalize().await?;
+    let (indices, diff_indices, di_indices) = match download_indices(release, opts, cli_opts, &mut progress, &repo, downloader).await {
+        Ok((indices, diff_indices, di_indices)) if indices.is_empty() && diff_indices.is_empty() && di_indices.is_empty() => {
+            repo.finalize(Vec::new()).await?;
             return Ok(MirrorResult::IrrelevantChanges)
         }
         Ok(indices) => indices,
@@ -105,20 +110,41 @@ pub async fn mirror(opts: &MirrorOpts, cli_opts: &CliOpts, downloader: &mut Down
 
     progress.next_step("Downloading packages").await;
 
+     
     if let Err(e) = download_from_indices(&repo, downloader, indices).await {
         _ = repo.delete_tmp();
         return Err(MirsError::DownloadPackages { inner: Box::new(e) })
     }
+    
 
     let packages_size = progress.bytes.success();
     let num_packages_downloaded = progress.files.success();
 
-    if let Err(e) = repo.finalize().await {
+    total_download_size += packages_size;
+
+    let paths_to_delete = if opts.debian_installer() { 
+        progress.next_step("Downloading debian installer").await;
+
+        let paths = match download_debian_installer(&repo, downloader, &mut progress, di_indices).await {
+            Ok(paths) => paths,
+            Err(e) => {
+                _ = repo.delete_tmp();
+                return Err(MirsError::DownloadDebianInstaller { inner: Box::new(e) })
+            }
+        };
+        
+        total_download_size += progress.bytes.success();
+
+        paths
+    } else {
+        Vec::new()
+    };
+
+    if let Err(e) = repo.finalize(paths_to_delete).await {
         _ = repo.delete_tmp();
         return Err(MirsError::Finalize { inner: Box::new(e) })
     }
 
-    total_download_size += packages_size;
 
     Ok(MirrorResult::NewRelease {
         total_download_size,
@@ -126,14 +152,17 @@ pub async fn mirror(opts: &MirrorOpts, cli_opts: &CliOpts, downloader: &mut Down
     })
 }
 
-async fn download_indices(release: Release, opts: &MirrorOpts, cli_opts: &CliOpts, progress: &mut Progress, repo: &Repository, downloader: &mut Downloader) -> Result<(Vec<FilePath>, Vec<FilePath>)> {
+async fn download_indices(release: Release, opts: &MirrorOpts, cli_opts: &CliOpts, progress: &mut Progress, repo: &Repository, downloader: &mut Downloader) -> Result<(Vec<FilePath>, Vec<FilePath>, Vec<FilePath>)> {
     let mut indices = Vec::new();
     let mut index_files = Vec::new();
+    let mut debian_installer_sumfiles = Vec::new();
 
     let by_hash = release.acquire_by_hash();
 
     for (path, file_entry) in release.into_filtered_files(opts, cli_opts) {
+        let mut add_by_hash = by_hash;
         let url = repo.to_url_in_dist(&path);
+
         let file_path_in_tmp = repo.to_path_in_tmp(&url);
 
         let file_path_in_root = repo.to_path_in_root(&url);
@@ -162,14 +191,80 @@ async fn download_indices(release: Release, opts: &MirrorOpts, cli_opts: &CliOpt
             index_files.push(file_path_in_tmp.clone());
         }
 
-        let download = repo.create_metadata_download(url, file_path_in_tmp, file_entry, by_hash)?;
+        if is_debian_installer_file(&path) {
+            debian_installer_sumfiles.push(file_path_in_tmp.clone());
+            add_by_hash = false;
+        }
+
+        let download = repo.create_metadata_download(url, file_path_in_tmp, file_entry, add_by_hash)?;
         downloader.queue(download).await?;
     }
 
     let mut progress_bar = progress.create_download_progress_bar().await;
     progress.wait_for_completion(&mut progress_bar).await;
 
-    Ok((indices, index_files))
+    Ok((indices, index_files, debian_installer_sumfiles))
+}
+
+pub async fn download_debian_installer(repo: &Repository, downloader: &mut Downloader, progress: &mut Progress, di_indices: Vec<FilePath>) -> Result<Vec<FilePath>> {
+    let sum_files = to_strongest_by_checksum(di_indices)?;
+
+    let mut paths_to_delete = Vec::with_capacity(sum_files.len());
+    
+    eprintln!("stuff!");
+
+    for sum_file in sum_files.iter() {
+        eprintln!("it's a sum file: {}", sum_file.path());
+        let base = sum_file.path().parent()
+            .expect("there should always be a parent");
+
+        eprintln!("sum file rel: {base}");
+        let rel_path = repo.strip_tmp_base(base).expect("sum files should be in tmp");
+
+        eprintln!("sum file rel: {rel_path}");
+        let current_image = repo.rebase_to_root(rel_path);
+
+        eprintln!("sum file: {current_image}");
+
+        paths_to_delete.push(current_image);
+    }
+
+    let mut progress_bar = progress.create_download_progress_bar().await;
+
+    eprintln!("let's do sum files again");
+
+    for sum_file in sum_files {
+        let base_path = sum_file.path().parent()
+            .expect("sum files should have a parent");
+
+        eprintln!("sum file base_path: {base_path}");
+        let base_path = FilePath::from_str(base_path)?;
+
+        for entry in sum_file.try_into_iter()? {
+            let SumFileEntry { checksum, path } = entry?;
+
+            let new_path = base_path.join(path);
+
+            let new_rel_path = repo.strip_tmp_base(new_path)
+                .expect("the new path should be in tmp");
+
+            //eprintln!("sum_file content to {new_path}");
+
+            let url = repo.to_url_in_root(new_rel_path.as_str());
+            let target_path = repo.to_path_in_tmp(&url);
+
+            //eprintln!("sum_file content url {url}");
+            //eprintln!("sum_file content target_path {target_path}");
+
+            let download = repo.create_raw_download(target_path, url, Some(checksum));
+
+            downloader.queue(download).await?;
+        }
+    }
+    
+    progress.wait_for_completion(&mut progress_bar).await;
+
+    Ok(paths_to_delete)
 }
 
 pub async fn download_from_diff_indices(repo: &Repository, downloader: &mut Downloader, progress: &mut Progress, diff_indices: Vec<FilePath>) -> Result<()> {
@@ -366,6 +461,11 @@ fn is_packages_file(path: &str) -> bool {
 
 fn is_index_file(path: &str) -> bool {
     path.ends_with("Index")
+}
+
+fn is_debian_installer_file(path: &str) -> bool {
+    path.contains("installer-") &&
+        path.ends_with("SUMS")
 }
 
 fn is_sources_file(path: &str) -> bool {

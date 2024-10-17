@@ -12,6 +12,7 @@ pub mod packages_file;
 pub mod sources_file;
 pub mod checksum;
 pub mod diff_index_file;
+pub mod sum_file;
 
 #[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
 pub struct FilePath(pub CompactString);
@@ -93,7 +94,10 @@ impl FilePath {
 
         let other = match other.strip_prefix('/') {
             Some(s) => s,
-            None => other
+            None => match other.strip_prefix("./") {
+                Some(s) => s,
+                None => other,
+            }
         };
 
         FilePath(format_compact!("{first}/{other}"))

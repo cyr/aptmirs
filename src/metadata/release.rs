@@ -204,6 +204,19 @@ impl<'a> ReleaseFileIterator<'a> {
                     file_prefix_filter.push(format_compact!("Contents-udeb-{arch}"));
                 }
             }
+
+            if !opts.debian_installer_arch.is_empty() {
+                file_prefix_filter.push(CompactString::const_new("MD5SUMS"));
+                file_prefix_filter.push(CompactString::const_new("SHA256SUMS"));
+                file_prefix_filter.push(CompactString::const_new("SHA512SUMS"));
+
+                dir_filter.insert(CompactString::const_new("current"));
+                dir_filter.insert(CompactString::const_new("images"));
+
+                for di_arch in &opts.debian_installer_arch {
+                    dir_filter.insert(format_compact!("installer-{di_arch}"));
+                }
+            }
             
             (file_prefix_filter, dir_filter)
         };
@@ -249,7 +262,7 @@ impl<'a> Iterator for ReleaseFileIterator<'a> {
                             }
 
                             break
-                        } 
+                        }
 
                         if !self.dir_filter.contains(part_name) {
                             break

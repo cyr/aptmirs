@@ -39,8 +39,12 @@ pub async fn read_config(path: &FilePath) -> Result<Vec<MirrorOpts>> {
             },
         }
     }
-
+    
     let mirrors = merge_similar(mirrors);
+
+    if mirrors.is_empty() {
+        return Err(MirsError::Config { msg: format_compact!("no valid repositories in config") })
+    }
 
     Ok(mirrors)
 }
@@ -56,7 +60,8 @@ fn merge_similar(mut mirrors: Vec<MirrorOpts>) -> Vec<MirrorOpts> {
     let merged_mirrors = mirrors.into_iter().fold(Vec::new(), |mut a: Vec<MirrorOpts>, mut v| {
         if let Some(last) = a.last_mut() {
             if last == &v {
-                last.components.append(&mut v.components)
+                last.components.append(&mut v.components);
+                v.debian_installer_arch.append(&mut last.debian_installer_arch);
             } else {
                 a.push(v)
             }
@@ -76,6 +81,7 @@ pub struct MirrorOpts {
     pub suite: CompactString,
     pub components: Vec<CompactString>,
     pub arch: Vec<CompactString>,
+    pub debian_installer_arch: Vec<CompactString>,
     pub source: bool,
 }
 
@@ -124,6 +130,7 @@ impl Display for MirrorOpts {
 impl MirrorOpts {
     pub fn try_from(mut line: &str) -> Result<MirrorOpts> {
         let mut arch = Vec::new();
+        let mut debian_installer_arch = Vec::new();
         
         let mut source = false;
 
@@ -143,16 +150,20 @@ impl MirrorOpts {
                 return Err(MirsError::Config { msg: CompactString::new("options bracket is not closed") })
             };
 
-            let options_line = &line[..bracket_end];
+            let options_line = (&line[1..bracket_end]).trim();
             line = &line[bracket_end+1..];
 
-            for part in options_line.split(' ') {
+            for part in options_line.split_whitespace() {
                 let Some((opt_key, opt_val)) = part.split_once('=') else {
                     return Err(MirsError::Config { msg: CompactString::new("invalid format of options bracket") })
                 };
 
                 if opt_key == "arch" {
                     arch.push(opt_val.to_compact_string())
+                }
+
+                if opt_key == "di_arch" {
+                    debian_installer_arch.push(opt_val.to_compact_string())
                 }
             }
         }
@@ -186,7 +197,12 @@ impl MirrorOpts {
             suite: suite.to_compact_string(),
             components,
             arch,
+            debian_installer_arch,
             source
         })
+    }
+
+    pub fn debian_installer(&self) -> bool {
+        !self.debian_installer_arch.is_empty()
     }
 }

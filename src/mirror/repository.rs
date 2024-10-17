@@ -1,11 +1,11 @@
-use std::path::Path;
+use std::{path::Path, str::FromStr};
 
 use compact_str::{format_compact, CompactString, ToCompactString};
 use reqwest::Url;
 
 use super::downloader::Download;
 
-use crate::{error::{MirsError, Result}, metadata::{release::FileEntry, FilePath, IndexFileEntry}};
+use crate::{error::{MirsError, Result}, metadata::{checksum::Checksum, release::FileEntry, FilePath, IndexFileEntry}};
 
 pub struct Repository {
     root_url: CompactString,
@@ -46,8 +46,8 @@ impl Repository {
 
     fn to_path_in_local_dir(&self, base: &FilePath, url: &str) -> FilePath {
         let relative_path = url
-            .strip_prefix(&self.root_url.as_str())
-            .expect("implementation error; download url should be in archive root");
+            .strip_prefix(self.root_url.as_str())
+            .expect("implementation error; download url should be in archive root: {base}, url: {url}");
 
         let relative_path = match relative_path.strip_prefix('/') {
             Some(path) => path,
@@ -65,12 +65,18 @@ impl Repository {
         Ok(())
     }
 
-    pub async fn finalize(&self) -> Result<()> {
+    pub async fn finalize(&self, paths_to_delete: Vec<FilePath>) -> Result<()> {
         let tmp_dir = self.tmp_dir.clone();
         let root_dir = self.root_dir.clone();
 
+        for path in paths_to_delete {
+            if tokio::fs::try_exists(&path).await? {
+                tokio::fs::remove_dir_all(&path).await?;
+            }
+        }
+
         tokio::task::spawn_blocking(move || {
-            rebase_dir(&tmp_dir.as_ref(), &tmp_dir.as_ref(), &root_dir.as_ref())?;
+            rebase_dir(tmp_dir.as_ref(), tmp_dir.as_ref(), root_dir.as_ref())?;
             
             std::fs::remove_dir_all(&tmp_dir)?;
             
@@ -79,7 +85,7 @@ impl Repository {
     }
 
     pub fn rel_from_tmp<'a>(&self, path: &'a str) -> &'a str {
-        path.strip_prefix(&self.tmp_dir.as_str())
+        path.strip_prefix(self.tmp_dir.as_str())
             .expect("input path should be in tmp dir")
     }
 
@@ -99,9 +105,19 @@ impl Repository {
         format_compact!("{}/{}", self.root_url, path)
     }
 
+    pub fn rebase_to_root<P: AsRef<str>>(&self, path: P) -> FilePath {
+        FilePath::from_str(&format_compact!("{}/{}", self.root_dir, path.as_ref())).expect("FilePath from str should always work")
+    }
+
     pub fn tmp_to_root<P: AsRef<str>>(&self, path: P) -> Option<FilePath> {
         path.as_ref().strip_prefix(self.tmp_dir.as_str())
             .map(|v| self.root_dir.join(v))
+    }
+
+    pub fn strip_tmp_base<P: AsRef<str>>(&self, path: P) -> Option<FilePath> {
+        path.as_ref().strip_prefix(self.tmp_dir.as_str())
+            .map(|v| v.strip_prefix('/').expect("Paths that strip tmp base should always start with / here"))
+            .map(|v| FilePath::from_str(v).expect("FilePath from str should always work"))
     }
 
     pub fn create_file_download(&self, package: IndexFileEntry) -> Box<Download> {
@@ -118,14 +134,18 @@ impl Repository {
         })
     }
 
-    pub fn create_metadata_download(&self, url: CompactString, file_path: FilePath, file_entry: FileEntry, by_hash: bool) -> Result<Box<Download>> {
-        let by_hash_base = FilePath(
-            file_path
-                .parent()
-                .expect("all files needs a parent(?)")
-                .to_compact_string()
-        );
+    pub fn create_raw_download(&self, target_path: FilePath, url: CompactString, checksum: Option<Checksum>) -> Box<Download> {
+        Box::new(Download {
+            url,
+            size: None,
+            checksum,
+            primary_target_path: target_path,
+            symlink_paths: Vec::new(),
+            always_download: true
+        })
+    }
 
+    pub fn create_metadata_download(&self, url: CompactString, file_path: FilePath, file_entry: FileEntry, by_hash: bool) -> Result<Box<Download>> {
         let size = file_entry.size;
 
         let strongest_checksum = file_entry.strongest_hash();
@@ -133,22 +153,27 @@ impl Repository {
 
         let mut symlink_paths = Vec::new();
         let primary_target_path = if by_hash {
+            let by_hash_base = FilePath(
+                file_path
+                    .parent()
+                    .expect("all files needs a parent(?)")
+                    .to_compact_string()
+            );
+
             symlink_paths.push(file_path);
 
-            let checksum = checksum_iter.next()
+            let strongest_checksum = checksum_iter.next()
                 .ok_or_else(|| MirsError::NoReleaseFile)?;
 
-            let rel_path = checksum.relative_path();
+            for checksum in checksum_iter {
+                let hash_path = by_hash_base.join(checksum.relative_path());
+                symlink_paths.push(hash_path);
+            }
 
-            by_hash_base.join(rel_path)
+            by_hash_base.join(strongest_checksum.relative_path())
         } else {
             file_path
         };
-
-        for checksum in checksum_iter {
-            let hash_path = by_hash_base.join(checksum.relative_path());
-            symlink_paths.push(hash_path);
-        }
 
         Ok(Box::new(Download {
             url,
@@ -164,9 +189,9 @@ impl Repository {
 fn sanitize_path_part(part: &str) -> CompactString {
     let mut sanitized = CompactString::new("");
 
-    let mut char_iter = part.chars();
+    let char_iter = part.chars();
 
-    while let Some(c) = char_iter.next() {
+    for c in char_iter {
         if c == '/' {
             sanitized.push('_')
         } else {

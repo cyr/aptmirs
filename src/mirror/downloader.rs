@@ -1,5 +1,5 @@
 
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 
 use async_channel::{bounded, Sender, Receiver};
 use compact_str::{CompactString, ToCompactString};
@@ -12,7 +12,7 @@ use super::progress::Progress;
 
 pub struct Downloader {
     sender: Sender<Box<Download>>,
-    _tasks: Vec<JoinHandle<()>>,
+    _tasks: Arc<Vec<JoinHandle<()>>>,
     progress: Progress,
     http_client: Client
 }
@@ -66,7 +66,7 @@ impl Downloader {
 
         Self {
             sender,
-            _tasks: tasks,
+            _tasks: Arc::new(tasks),
             progress,
             http_client
         }

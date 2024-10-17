@@ -37,6 +37,15 @@ pub enum MirsError {
     #[error("url does not point to a valid repository, no release file found")]
     NoReleaseFile,
 
+    #[error("unrecognized sum file: {path}")]
+    UnrecognizedSumFile { path: FilePath },
+
+    #[error("error parsing sum file {path}: {inner}")]
+    SumFileParsing { path: FilePath, inner: Box<MirsError> },
+
+    #[error("invalid entry in sum file")]
+    InvalidSumEntry { line: CompactString },
+
     #[error("unable to parse packages file {path}")]
     ParsingPackages { path: FilePath },
 
@@ -78,6 +87,9 @@ pub enum MirsError {
 
     #[error("error occurred while downloading packages: {inner}")]
     DownloadPackages { inner: Box<MirsError> },
+
+    #[error("error occurred while downloading debian installer: {inner}")]
+    DownloadDebianInstaller { inner: Box<MirsError> },
 
     #[error("error occurred while finalizing mirror operation: {inner}")]
     Finalize { inner: Box<MirsError> },

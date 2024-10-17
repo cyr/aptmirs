@@ -4,15 +4,14 @@ use console::{style, pad_str};
 use indicatif::{ProgressBar, ProgressStyle, ProgressFinish, HumanBytes};
 use tokio::{sync::Mutex, time::sleep};
 
-pub const TOTAL_STEPS: u8 = 4;
-
 #[derive(Clone)]
 pub struct Progress {
     pub step: Arc<AtomicU8>,
     step_name: Arc<Mutex<String>>,
     pub files: ProgressPart,
     pub bytes: ProgressPart,
-    pub total_bytes: u64,
+    pub total_bytes: Arc<AtomicU64>,
+    total_steps: Arc<AtomicU8>
 }
 
 impl Progress {
@@ -22,7 +21,8 @@ impl Progress {
             step: Arc::new(AtomicU8::new(0)),
             files: ProgressPart::new(),
             bytes: ProgressPart::new(),
-            total_bytes: 0,
+            total_bytes: Arc::new(AtomicU64::new(0)),
+            total_steps: Arc::new(AtomicU8::new(4))
         }
     }
 
@@ -32,7 +32,8 @@ impl Progress {
             step: Arc::new(AtomicU8::new(step)),
             files: ProgressPart::new(),
             bytes: ProgressPart::new(),
-            total_bytes: 0,
+            total_bytes: Arc::new(AtomicU64::new(0)),
+            total_steps: Arc::new(AtomicU8::new(4))
         }
     }
 
@@ -51,8 +52,9 @@ impl Progress {
     pub async fn create_prefix(&self) -> String {
         pad_str(
             &style(format!(
-                "[{}/{TOTAL_STEPS}] {}", 
-                self.step.load(Ordering::SeqCst), 
+                "[{}/{}] {}", 
+                self.step.load(Ordering::SeqCst),
+                self.total_steps.load(Ordering::SeqCst), 
                 self.step_name.lock().await)
             ).bold().to_string(), 
             26, 
@@ -110,6 +112,11 @@ impl Progress {
         self.bytes.reset();
         self.files.reset();
         self.step.store(0, Ordering::SeqCst);
+        self.total_steps.store(5, Ordering::SeqCst);
+    }
+
+    pub fn set_total_steps(&mut self, num_steps: u8) {
+        self.total_steps.store(num_steps, Ordering::SeqCst);
     }
 
     pub async fn next_step(&mut self, step_name: &str) {
@@ -127,7 +134,7 @@ impl Progress {
             sleep(Duration::from_millis(100)).await
         }
 
-        self.total_bytes += self.bytes.success();
+        self.total_bytes.fetch_add(self.bytes.success(), Ordering::SeqCst);
 
         self.update_for_files(progress_bar);
 
