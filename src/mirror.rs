@@ -1,14 +1,11 @@
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fmt::Display;
-use std::fs::File;
 use std::str::FromStr;
 use std::sync::atomic::Ordering;
 
 use compact_str::format_compact;
 use indicatif::{MultiProgress, HumanBytes};
-use pgp::cleartext::CleartextSignedMessage;
-use pgp::{Deserializable, StandaloneSignature};
 
 use crate::metadata::diff_index_file::DiffIndexFile;
 use crate::metadata::sum_file::{to_strongest_by_checksum, SumFileEntry};
@@ -392,29 +389,7 @@ pub async fn download_release(repository: &Repository, downloader: &mut Download
     progress_bar.finish_using_style();
 
     if repository.verify_pgp_requirement() {
-        if let Some(inrelease_file) = files.iter()
-            .find(|v| v.file_name() == "InRelease") {
-            let content = std::fs::read_to_string(inrelease_file)?;
-
-            let (msg, _) = CleartextSignedMessage::from_string(&content)?;
-
-            repository.verify_message(&msg)?;
-        } else {
-            let Some(release_file) = files.iter().find(|v| v.file_name() == "Release") else {
-                return Err(MirsError::PgpNotSupported)
-            };
-
-            let Some(release_file_signature) = files.iter().find(|v| v.file_name() == "Release.pgp") else {
-                return Err(MirsError::PgpNotSupported)
-            };
-
-            let sign_handle = File::open(release_file_signature)?;
-            let content = std::fs::read_to_string(release_file)?;
-
-            let (signature, _) = StandaloneSignature::from_reader_single(&sign_handle)?;
-            
-            repository.verify_message_with_standlone_signature(&content, &signature)?;
-        }
+        repository.verify_release_signature(&files)?;
     }
 
     let Some(release_file) = get_release_file(&files) else {

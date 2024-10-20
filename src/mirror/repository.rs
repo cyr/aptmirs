@@ -205,22 +205,45 @@ impl Repository {
         self.pgp_pub_key.is_some()
     }
 
-    pub fn verify_message(&self, msg: &CleartextSignedMessage) -> Result<()> {
+    pub fn verify_release_signature(&self, files: &[FilePath]) -> Result<()> {
         let Some(pgp_pub_key) = &self.pgp_pub_key else {
-            panic!("trying to verify signature without a pgp_pub_key set")
+            panic!("implementation error: trying to verify signature without a pgp_pub_key set")
         };
+        
+        if let Some(inrelease_file) = files.iter().find(|v| v.file_name() == "InRelease") {
+            self.verify_signed_message(pgp_pub_key, inrelease_file)?;
+        } else {
+            let Some(release_file) = files.iter().find(|v| v.file_name() == "Release") else {
+                return Err(MirsError::PgpNotSupported)
+            };
 
-        _ = msg.verify(&pgp_pub_key)?;
+            let Some(release_file_signature) = files.iter().find(|v| v.file_name() == "Release.pgp") else {
+                return Err(MirsError::PgpNotSupported)
+            };
+            
+            self.verify_message_with_standlone_signature(pgp_pub_key, release_file, release_file_signature)?;
+        }
 
         Ok(())
     }
 
-    pub fn verify_message_with_standlone_signature(&self, msg: &str, signature: &StandaloneSignature) -> Result<()> {
-        let Some(pgp_pub_key) = &self.pgp_pub_key else {
-            panic!("trying to verify signature without a pgp_pub_key set")
-        };
+    fn verify_signed_message(&self, pgp_pub_key: &SignedPublicKey, file: &FilePath) -> Result<()> {
+        let content = std::fs::read_to_string(file)?;
 
-        signature.verify(pgp_pub_key, msg.as_bytes())?;
+        let (msg, _) = CleartextSignedMessage::from_string(&content)?;
+
+        _ = msg.verify(pgp_pub_key)?;
+
+        Ok(())
+    }
+
+    fn verify_message_with_standlone_signature(&self, pgp_pub_key: &SignedPublicKey, release_file: &FilePath, release_file_signature: &FilePath) -> Result<()> {
+        let sign_handle = File::open(release_file_signature)?;
+        let content = std::fs::read_to_string(release_file)?;
+
+        let (signature, _) = StandaloneSignature::from_reader_single(&sign_handle)?;
+
+        signature.verify(pgp_pub_key, content.as_bytes())?;
 
         Ok(())
     }
