@@ -1,38 +1,54 @@
-use std::{path::Path, str::FromStr};
+use std::{fs::File, path::Path, str::FromStr};
 
 use compact_str::{format_compact, CompactString, ToCompactString};
+use pgp::{cleartext::CleartextSignedMessage, Deserializable, SignedPublicKey, StandaloneSignature};
 use reqwest::Url;
 
 use super::downloader::Download;
 
-use crate::{error::{MirsError, Result}, metadata::{checksum::Checksum, release::FileEntry, FilePath, IndexFileEntry}};
+use crate::{config::MirrorOpts, error::{MirsError, Result}, metadata::{checksum::Checksum, release::FileEntry, FilePath, IndexFileEntry}, CliOpts};
 
 pub struct Repository {
     root_url: CompactString,
     root_dir: FilePath,
     dist_url: CompactString,
     tmp_dir: FilePath,
+    pgp_pub_key: Option<SignedPublicKey>,
 }
 
 impl Repository {
-    pub fn build(archive_root: &str, suite: &str, base_dir: &FilePath) -> Result<Self> {
-        let root_url = match archive_root.strip_prefix('/') {
+    pub fn build(mirror_opts: &MirrorOpts, cli_opts: &CliOpts) -> Result<Self> {
+        let root_url = match &mirror_opts.url.as_str().strip_prefix('/') {
             Some(url) => url.to_compact_string(),
-            None => archive_root.to_compact_string(),
+            None => mirror_opts.url.clone(),
         };
-        let dist_url = format_compact!("{root_url}/dists/{suite}");
+
+        let dist_url = format_compact!("{root_url}/dists/{}", mirror_opts.suite);
 
         let parsed_url = Url::parse(&root_url)
             .map_err(|_| MirsError::UrlParsing { url: root_url.clone() })?;
 
-        let root_dir = local_dir_from_archive_url(&parsed_url, base_dir)?;
-        let tmp_dir = create_tmp_dir(&parsed_url, suite, base_dir)?;
+        let pgp_pub_key = if let Some(pgp_signing_key) = &mirror_opts.pgp_pub_key {
+            let key_file = File::open(pgp_signing_key)
+                .map_err(|e| MirsError::PgpPubKey { inner: Box::new(e.into()) })?;
+
+            let (signed_public_key, _) = SignedPublicKey::from_reader_single(&key_file)
+                .map_err(|e| MirsError::PgpPubKey { inner: Box::new(e.into()) })?;
+
+            Some(signed_public_key)
+        } else {
+            None
+        };
+
+        let root_dir = local_dir_from_archive_url(&parsed_url, &cli_opts.output)?;
+        let tmp_dir = create_tmp_dir(&parsed_url, &mirror_opts.suite, &cli_opts.output)?;
 
         Ok(Self {
             root_url,
             root_dir,
             dist_url,
-            tmp_dir
+            tmp_dir,
+            pgp_pub_key
         })
     }
 
@@ -183,6 +199,30 @@ impl Repository {
             symlink_paths,
             always_download: false
         }))
+    }
+
+    pub fn verify_pgp_requirement(&self) -> bool {
+        self.pgp_pub_key.is_some()
+    }
+
+    pub fn verify_message(&self, msg: &CleartextSignedMessage) -> Result<()> {
+        let Some(pgp_pub_key) = &self.pgp_pub_key else {
+            panic!("trying to verify signature without a pgp_pub_key set")
+        };
+
+        _ = msg.verify(&pgp_pub_key)?;
+
+        Ok(())
+    }
+
+    pub fn verify_message_with_standlone_signature(&self, msg: &str, signature: &StandaloneSignature) -> Result<()> {
+        let Some(pgp_pub_key) = &self.pgp_pub_key else {
+            panic!("trying to verify signature without a pgp_pub_key set")
+        };
+
+        signature.verify(pgp_pub_key, msg.as_bytes())?;
+
+        Ok(())
     }
 }
 

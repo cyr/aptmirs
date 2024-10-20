@@ -95,5 +95,14 @@ pub enum MirsError {
     Finalize { inner: Box<MirsError> },
 
     #[error("error reading {path}: {inner}")]
-    ReadingPackage { path: FilePath, inner: Box<MirsError> }
+    ReadingPackage { path: FilePath, inner: Box<MirsError> },
+
+    #[error("PGP error: {inner}")]
+    Pgp { #[from] inner: pgp::errors::Error },  
+
+    #[error("unable to read PGP pub key: {inner}")]
+    PgpPubKey { inner: Box<MirsError> },
+
+    #[error("this repository does not provide a PGP signature, yet a public key has been provided - no verification can be made")]
+    PgpNotSupported,
 }

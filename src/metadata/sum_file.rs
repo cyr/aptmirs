@@ -32,13 +32,7 @@ impl TryFrom<FilePath> for SumFile {
     type Error = MirsError;
     
     fn try_from(value: FilePath) -> Result<Self> {
-        let Some(name) = value.file_name() else {
-            return Err(MirsError::UnrecognizedSumFile { path: value })
-        };
-
-        let name = name.to_str().expect("file names need to be valid utf8");
-
-        let file = match name {
+        let file = match value.file_name() {
             "MD5SUMS"    => SumFile::Md5(value),
             "SHA1SUMS"   => SumFile::Sha1(value),
             "SHA256SUMS" => SumFile::Sha256(value),

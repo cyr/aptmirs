@@ -48,16 +48,22 @@ impl FilePath {
         &self.0
     }
 
-    pub fn file_stem(&self) -> Option<&OsStr> {
+    pub fn file_stem(&self) -> &str {
         let p: &Path = self.as_ref();
 
         p.file_stem()
+            .expect("a FilePath should have a filename")
+            .to_str()
+            .expect("a FilePath name should be utf8")
     }
 
-    pub fn file_name(&self) -> Option<&OsStr> {
+    pub fn file_name(&self) -> &str {
         let p: &Path = self.as_ref();
 
         p.file_name()
+            .expect("a FilePath should have a filename")
+            .to_str()
+            .expect("a FilePath name should be utf8")
     }
 
     pub fn exists(&self) -> bool {
@@ -120,8 +126,7 @@ impl IndexSource {
 
 impl From<FilePath> for IndexSource {
     fn from(value: FilePath) -> Self {
-        match value.file_name().expect("indices should have names")
-            .to_str().expect("the file name of indices should be valid utf8") {
+        match value.file_name() {
             v if v.starts_with("Packages") => IndexSource::Packages(value),
             v if v.starts_with("Sources") => IndexSource::Sources(value),
             _ => unreachable!("implementation error; non-index file as IndexSource")

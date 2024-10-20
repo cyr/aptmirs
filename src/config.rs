@@ -83,6 +83,7 @@ pub struct MirrorOpts {
     pub arch: Vec<CompactString>,
     pub debian_installer_arch: Vec<CompactString>,
     pub source: bool,
+    pub pgp_pub_key: Option<CompactString>,
 }
 
 impl Ord for MirrorOpts {
@@ -131,6 +132,7 @@ impl MirrorOpts {
     pub fn try_from(mut line: &str) -> Result<MirrorOpts> {
         let mut arch = Vec::new();
         let mut debian_installer_arch = Vec::new();
+        let mut pgp_pub_key: Option<CompactString> = None;
         
         let mut source = false;
 
@@ -150,7 +152,7 @@ impl MirrorOpts {
                 return Err(MirsError::Config { msg: CompactString::new("options bracket is not closed") })
             };
 
-            let options_line = (&line[1..bracket_end]).trim();
+            let options_line = line[1..bracket_end].trim();
             line = &line[bracket_end+1..];
 
             for part in options_line.split_whitespace() {
@@ -158,13 +160,13 @@ impl MirrorOpts {
                     return Err(MirsError::Config { msg: CompactString::new("invalid format of options bracket") })
                 };
 
-                if opt_key == "arch" {
-                    arch.push(opt_val.to_compact_string())
+                match opt_key {
+                    "arch"            => arch.extend(opt_val.split(',').map(|v|v.to_compact_string())),
+                    "di_arch"         => debian_installer_arch.extend(opt_val.split(',').map(|v|v.to_compact_string())),
+                    "pgp_pub_key" => pgp_pub_key = Some(opt_val.to_compact_string()),
+                    _ => ()
                 }
 
-                if opt_key == "di_arch" {
-                    debian_installer_arch.push(opt_val.to_compact_string())
-                }
             }
         }
 
@@ -198,7 +200,8 @@ impl MirrorOpts {
             components,
             arch,
             debian_installer_arch,
-            source
+            source,
+            pgp_pub_key
         })
     }
 

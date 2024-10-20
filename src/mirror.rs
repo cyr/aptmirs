@@ -1,12 +1,14 @@
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fmt::Display;
-use std::os::unix::ffi::OsStrExt;
+use std::fs::File;
 use std::str::FromStr;
 use std::sync::atomic::Ordering;
 
 use compact_str::format_compact;
 use indicatif::{MultiProgress, HumanBytes};
+use pgp::cleartext::CleartextSignedMessage;
+use pgp::{Deserializable, StandaloneSignature};
 
 use crate::metadata::diff_index_file::DiffIndexFile;
 use crate::metadata::sum_file::{to_strongest_by_checksum, SumFileEntry};
@@ -46,7 +48,7 @@ impl Display for MirrorResult {
 }
 
 pub async fn mirror(opts: &MirrorOpts, cli_opts: &CliOpts, downloader: &mut Downloader) -> Result<MirrorResult> {
-    let repo = Repository::build(&opts.url, &opts.suite, &cli_opts.output)?;
+    let repo = Repository::build(opts, cli_opts)?;
 
     let mut progress = downloader.progress();
     progress.reset();
@@ -211,33 +213,23 @@ pub async fn download_debian_installer(repo: &Repository, downloader: &mut Downl
 
     let mut paths_to_delete = Vec::with_capacity(sum_files.len());
     
-    eprintln!("stuff!");
-
     for sum_file in sum_files.iter() {
-        eprintln!("it's a sum file: {}", sum_file.path());
         let base = sum_file.path().parent()
             .expect("there should always be a parent");
 
-        eprintln!("sum file rel: {base}");
         let rel_path = repo.strip_tmp_base(base).expect("sum files should be in tmp");
 
-        eprintln!("sum file rel: {rel_path}");
         let current_image = repo.rebase_to_root(rel_path);
-
-        eprintln!("sum file: {current_image}");
 
         paths_to_delete.push(current_image);
     }
 
     let mut progress_bar = progress.create_download_progress_bar().await;
 
-    eprintln!("let's do sum files again");
-
     for sum_file in sum_files {
         let base_path = sum_file.path().parent()
             .expect("sum files should have a parent");
 
-        eprintln!("sum file base_path: {base_path}");
         let base_path = FilePath::from_str(base_path)?;
 
         for entry in sum_file.try_into_iter()? {
@@ -248,13 +240,8 @@ pub async fn download_debian_installer(repo: &Repository, downloader: &mut Downl
             let new_rel_path = repo.strip_tmp_base(new_path)
                 .expect("the new path should be in tmp");
 
-            //eprintln!("sum_file content to {new_path}");
-
             let url = repo.to_url_in_root(new_rel_path.as_str());
             let target_path = repo.to_path_in_tmp(&url);
-
-            //eprintln!("sum_file content url {url}");
-            //eprintln!("sum_file content target_path {target_path}");
 
             let download = repo.create_raw_download(target_path, url, Some(checksum));
 
@@ -316,11 +303,11 @@ pub async fn download_from_indices(repo: &Repository, downloader: &mut Downloade
     let mut existing_indices = BTreeMap::<FilePath, FilePath>::new();
 
     for index_file_path in indices.into_iter().filter(|f| f.exists()) {
-        let file_stem = index_file_path.file_stem().unwrap();
+        let file_stem = index_file_path.file_stem();
         let path_with_stem = FilePath(format_compact!(
             "{}/{}", 
             index_file_path.parent().unwrap(), 
-            file_stem.to_str().unwrap()
+            file_stem
         ));
 
         if let Some(val) = existing_indices.get_mut(&path_with_stem) {
@@ -404,6 +391,32 @@ pub async fn download_release(repository: &Repository, downloader: &mut Download
 
     progress_bar.finish_using_style();
 
+    if repository.verify_pgp_requirement() {
+        if let Some(inrelease_file) = files.iter()
+            .find(|v| v.file_name() == "InRelease") {
+            let content = std::fs::read_to_string(inrelease_file)?;
+
+            let (msg, _) = CleartextSignedMessage::from_string(&content)?;
+
+            repository.verify_message(&msg)?;
+        } else {
+            let Some(release_file) = files.iter().find(|v| v.file_name() == "Release") else {
+                return Err(MirsError::PgpNotSupported)
+            };
+
+            let Some(release_file_signature) = files.iter().find(|v| v.file_name() == "Release.pgp") else {
+                return Err(MirsError::PgpNotSupported)
+            };
+
+            let sign_handle = File::open(release_file_signature)?;
+            let content = std::fs::read_to_string(release_file)?;
+
+            let (signature, _) = StandaloneSignature::from_reader_single(&sign_handle)?;
+            
+            repository.verify_message_with_standlone_signature(&content, &signature)?;
+        }
+    }
+
     let Some(release_file) = get_release_file(&files) else {
         return Err(MirsError::NoReleaseFile)
     };
@@ -477,10 +490,7 @@ fn is_sources_file(path: &str) -> bool {
 
 fn get_release_file(files: &Vec<FilePath>) -> Option<&FilePath> {
     for file in files {
-        let file_name = file.file_name()
-            .expect("release files should be files");
-
-        if let b"InRelease" | b"Release" = file_name.as_bytes() {
+        if let "InRelease" | "Release" = file.file_name() {
             return Some(file)
         }
     }
