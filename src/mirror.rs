@@ -388,9 +388,7 @@ pub async fn download_release(repository: &Repository, downloader: &mut Download
 
     progress_bar.finish_using_style();
 
-    if repository.verify_pgp_requirement() {
-        repository.verify_release_signature(&files)?;
-    }
+    repository.verify_release_signature(&files)?;
 
     let Some(release_file) = get_release_file(&files) else {
         return Err(MirsError::NoReleaseFile)

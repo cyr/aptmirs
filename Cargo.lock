@@ -142,7 +142,7 @@ dependencies = [
 
 [[package]]
 name = "aptmirs"
-version = "0.11.1"
+version = "0.11.2"
 dependencies = [
  "async-channel",
  "bzip2",

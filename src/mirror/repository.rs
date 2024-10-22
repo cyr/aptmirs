@@ -201,27 +201,21 @@ impl Repository {
         }))
     }
 
-    pub fn verify_pgp_requirement(&self) -> bool {
-        self.pgp_pub_key.is_some()
-    }
-
     pub fn verify_release_signature(&self, files: &[FilePath]) -> Result<()> {
-        let Some(pgp_pub_key) = &self.pgp_pub_key else {
-            panic!("implementation error: trying to verify signature without a pgp_pub_key set")
-        };
-        
-        if let Some(inrelease_file) = files.iter().find(|v| v.file_name() == "InRelease") {
-            self.verify_signed_message(pgp_pub_key, inrelease_file)?;
-        } else {
-            let Some(release_file) = files.iter().find(|v| v.file_name() == "Release") else {
-                return Err(MirsError::PgpNotSupported)
-            };
+        if let Some(pgp_pub_key) = &self.pgp_pub_key {
+            if let Some(inrelease_file) = files.iter().find(|v| v.file_name() == "InRelease") {
+                self.verify_signed_message(pgp_pub_key, inrelease_file)?;
+            } else {
+                let Some(release_file) = files.iter().find(|v| v.file_name() == "Release") else {
+                    return Err(MirsError::PgpNotSupported)
+                };
 
-            let Some(release_file_signature) = files.iter().find(|v| v.file_name() == "Release.pgp") else {
-                return Err(MirsError::PgpNotSupported)
-            };
-            
-            self.verify_message_with_standlone_signature(pgp_pub_key, release_file, release_file_signature)?;
+                let Some(release_file_signature) = files.iter().find(|v| v.file_name() == "Release.pgp") else {
+                    return Err(MirsError::PgpNotSupported)
+                };
+                
+                self.verify_message_with_standlone_signature(pgp_pub_key, release_file, release_file_signature)?;
+            }
         }
 
         Ok(())
@@ -232,9 +226,17 @@ impl Repository {
 
         let (msg, _) = CleartextSignedMessage::from_string(&content)?;
 
-        _ = msg.verify(pgp_pub_key)?;
+        if msg.verify(&pgp_pub_key).is_ok() {
+            return Ok(())
+        }
 
-        Ok(())
+        for subkey in &pgp_pub_key.public_subkeys {
+            if msg.verify(subkey).is_ok() {
+                return Ok(())
+            }
+        }
+
+        Err(MirsError::PgpNotVerified)
     }
 
     fn verify_message_with_standlone_signature(&self, pgp_pub_key: &SignedPublicKey, release_file: &FilePath, release_file_signature: &FilePath) -> Result<()> {
@@ -243,9 +245,17 @@ impl Repository {
 
         let (signature, _) = StandaloneSignature::from_reader_single(&sign_handle)?;
 
-        signature.verify(pgp_pub_key, content.as_bytes())?;
+        if signature.verify(&pgp_pub_key, content.as_bytes()).is_ok() {
+            return Ok(())
+        }
 
-        Ok(())
+        for subkey in &pgp_pub_key.public_subkeys {
+            if signature.verify(&subkey, content.as_bytes()).is_ok() {
+                return Ok(())
+            }
+        }
+
+        Err(MirsError::PgpNotVerified)
     }
 }
 

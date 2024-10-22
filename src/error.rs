@@ -105,4 +105,7 @@ pub enum MirsError {
 
     #[error("this repository does not provide a PGP signature, yet a public key has been provided - no verification can be made")]
     PgpNotSupported,
+
+    #[error("could not verify PGP signature with provided public key")]
+    PgpNotVerified,
 }
