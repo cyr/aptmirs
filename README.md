@@ -40,7 +40,7 @@ Multiple options can be added inside the same bracket.
 deb [arch=amd64 arch=arm64 di_arch=amd64] http://ftp.se.debian.org/debian  bookworm  main contrib non-free non-free-firmware
 ```
 
-If you want to require PGP signature verification, either use the `--pgp-key-path` option and set pgp_verify=true on the repository On failed verification the mirroring process will abort.
+If you want to require PGP signature verification, either use the `--pgp-key-path` option and set pgp_verify=true on the repository
 
 ```
 deb [arch=amd64 pgp_verify=true] http://ftp.se.debian.org/debian  bookworm  main contrib non-free non-free-firmware
@@ -55,6 +55,8 @@ Or add the pgp_pub_key option pointing at the correct PGP public key.
 ```
 deb [arch=amd64 pgp_pub_key=/etc/apt/trusted.gpg.d/debian-archive-bookworm-stable.asc] http://ftp.se.debian.org/debian  bookworm  main contrib non-free non-free-firmware
 ```
+
+On failed verification the mirroring process will abort.
 
 ## Usage
 
