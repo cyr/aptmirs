@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::ffi::OsStr;
 use std::fmt::Display;
 use std::str::FromStr;
 use std::sync::atomic::Ordering;
@@ -9,6 +8,7 @@ use indicatif::{MultiProgress, HumanBytes};
 
 use crate::metadata::diff_index_file::DiffIndexFile;
 use crate::metadata::sum_file::{to_strongest_by_checksum, SumFileEntry};
+use crate::pgp::{verify_release_signature, PgpKeyStore};
 use crate::CliOpts;
 use crate::config::MirrorOpts;
 use crate::error::{Result, MirsError};
@@ -44,7 +44,7 @@ impl Display for MirrorResult {
     }
 }
 
-pub async fn mirror(opts: &MirrorOpts, cli_opts: &CliOpts, downloader: &mut Downloader) -> Result<MirrorResult> {
+pub async fn mirror(opts: &MirrorOpts, cli_opts: &CliOpts, downloader: &mut Downloader, key_store: &Option<PgpKeyStore>) -> Result<MirrorResult> {
     let repo = Repository::build(opts, cli_opts)?;
 
     let mut progress = downloader.progress();
@@ -58,7 +58,7 @@ pub async fn mirror(opts: &MirrorOpts, cli_opts: &CliOpts, downloader: &mut Down
 
     progress.next_step("Downloading release").await;
 
-    let release = match download_release(&repo, downloader).await {
+    let release = match download_release(&repo, downloader, opts, key_store).await {
         Ok(Some(release)) => release,
         Ok(None) => {
             _ = repo.delete_tmp();
@@ -114,7 +114,6 @@ pub async fn mirror(opts: &MirrorOpts, cli_opts: &CliOpts, downloader: &mut Down
         _ = repo.delete_tmp();
         return Err(MirsError::DownloadPackages { inner: Box::new(e) })
     }
-    
 
     let packages_size = progress.bytes.success();
     let num_packages_downloaded = progress.files.success();
@@ -143,7 +142,6 @@ pub async fn mirror(opts: &MirrorOpts, cli_opts: &CliOpts, downloader: &mut Down
         _ = repo.delete_tmp();
         return Err(MirsError::Finalize { inner: Box::new(e) })
     }
-
 
     Ok(MirrorResult::NewRelease {
         total_download_size,
@@ -354,7 +352,7 @@ pub async fn download_from_indices(repo: &Repository, downloader: &mut Downloade
     Ok(())
 }
 
-pub async fn download_release(repository: &Repository, downloader: &mut Downloader) -> Result<Option<Release>> {
+pub async fn download_release(repository: &Repository, downloader: &mut Downloader, opts: &MirrorOpts, key_store: &Option<PgpKeyStore>) -> Result<Option<Release>> {
     let mut files = Vec::with_capacity(3);
 
     let mut progress = downloader.progress();
@@ -388,7 +386,17 @@ pub async fn download_release(repository: &Repository, downloader: &mut Download
 
     progress_bar.finish_using_style();
 
-    repository.verify_release_signature(&files)?;
+    if opts.pgp_verify {
+        if repository.has_specified_pgp_key() {
+            verify_release_signature(&files, repository)?;
+        } else {
+            let Some(key_store) = key_store else {
+                return Err(MirsError::PgpNotVerified)
+            };
+
+            verify_release_signature(&files, key_store)?;
+        }
+    }
 
     let Some(release_file) = get_release_file(&files) else {
         return Err(MirsError::NoReleaseFile)
@@ -427,10 +435,7 @@ pub async fn download_release(repository: &Repository, downloader: &mut Download
     Ok(Some(release))
 }
 
-fn is_extension_preferred(old: Option<&OsStr>, new: Option<&OsStr>) -> bool {
-    let old = old.map(|v| v.to_str().unwrap());
-    let new = new.map(|v| v.to_str().unwrap());
-
+fn is_extension_preferred(old: Option<&str>, new: Option<&str>) -> bool {
     matches!((old, new),
         (_, Some("gz")) |
         (_, Some("xz")) |

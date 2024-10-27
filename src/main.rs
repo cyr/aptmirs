@@ -2,6 +2,7 @@ use clap::{command, arg, Parser};
 use config::read_config;
 use metadata::FilePath;
 use mirror::downloader::Downloader;
+use pgp::PgpKeyStore;
 
 use crate::error::Result;
 
@@ -9,6 +10,7 @@ mod mirror;
 mod error;
 mod metadata;
 mod config;
+mod pgp;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -17,11 +19,20 @@ async fn main() -> Result<()> {
     let opts = read_config(&cli_opts.config).await?;
 
     let mut downloader = Downloader::build(cli_opts.dl_threads);
-    
+
+    let pgp_key_store = if let Some(key_path) = &cli_opts.pgp_key_path {
+        
+        eprintln!("key store online");
+        Some(PgpKeyStore::build_from_path(key_path)?)
+    } else {
+        eprintln!("no key store possible");
+        None
+    };
+
     for opt in opts {
         println!("{} Mirroring {}", now(), &opt);
 
-        match mirror::mirror(&opt, &cli_opts, &mut downloader).await {
+        match mirror::mirror(&opt, &cli_opts, &mut downloader, &pgp_key_store).await {
             Ok(result) => println!("{} Mirroring done: {result}", now()),
             Err(e) => println!("{} Mirroring failed: {e}", now())
         }
@@ -48,6 +59,9 @@ struct CliOpts {
     #[arg(short, long, env, value_name = "DL_THREADS", default_value_t = 8_u8,
         help = "The maximum number of concurrent downloading tasks")]
     dl_threads: u8,
+
+    #[arg(short, long, env, value_name = "PGP_KEY_PATH")]
+    pgp_key_path: Option<FilePath>,
 }
 
 fn now() -> String {

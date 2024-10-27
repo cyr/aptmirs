@@ -1,4 +1,4 @@
-use std::{ffi::OsStr, fmt::Display, fs::Metadata, io::{BufRead, BufReader, Read}, path::Path, str::FromStr, sync::{atomic::{AtomicU64, Ordering}, Arc}};
+use std::{fmt::Display, fs::Metadata, io::{BufRead, BufReader, Read}, path::Path, str::FromStr, sync::{atomic::{AtomicU64, Ordering}, Arc}};
 
 use compact_str::{format_compact, CompactString, ToCompactString};
 
@@ -22,6 +22,12 @@ impl FromStr for FilePath {
 
     fn from_str(s: &str) -> std::prelude::v1::Result<Self, Self::Err> {
         Ok(FilePath(s.to_compact_string()))
+    }
+}
+
+impl From<&Path> for FilePath {
+    fn from(value: &Path) -> Self {
+        Self(value.as_os_str().to_str().expect("file paths should be utf8").to_compact_string())
     }
 }
 
@@ -70,10 +76,10 @@ impl FilePath {
         self.metadata().is_ok()
     }
 
-    pub fn extension(&self) -> Option<&OsStr> {
+    pub fn extension(&self) -> Option<&str> {
         let p: &Path = self.as_ref();
 
-        p.extension()
+        p.extension().map(|v| v.to_str().expect("path extensions should be utf8"))
     }
 
     pub fn metadata(&self) -> std::result::Result<Metadata, std::io::Error> {
@@ -169,10 +175,7 @@ pub fn create_reader<R: Read + 'static>(file: R, path: &FilePath) -> Result<(Box
         read: counter.clone(),
     };
 
-    let reader: Box<dyn BufRead> = match path.extension()
-        .map(|v|
-            v.to_str().expect("extension must be valid ascii")
-        ) {
+    let reader: Box<dyn BufRead> = match path.extension() {
         Some("xz") => {
             let xz_decoder = xz2::read::XzDecoder::new_multi_decoder(file_reader);
             Box::new(BufReader::with_capacity(1024*1024, xz_decoder))

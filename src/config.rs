@@ -84,6 +84,7 @@ pub struct MirrorOpts {
     pub debian_installer_arch: Vec<CompactString>,
     pub source: bool,
     pub pgp_pub_key: Option<CompactString>,
+    pub pgp_verify: bool,
 }
 
 impl Ord for MirrorOpts {
@@ -133,6 +134,7 @@ impl MirrorOpts {
         let mut arch = Vec::new();
         let mut debian_installer_arch = Vec::new();
         let mut pgp_pub_key: Option<CompactString> = None;
+        let mut pgp_verify = false;
         
         let mut source = false;
 
@@ -163,7 +165,11 @@ impl MirrorOpts {
                 match opt_key {
                     "arch"            => arch.extend(opt_val.split(',').map(|v|v.to_compact_string())),
                     "di_arch"         => debian_installer_arch.extend(opt_val.split(',').map(|v|v.to_compact_string())),
-                    "pgp_pub_key" => pgp_pub_key = Some(opt_val.to_compact_string()),
+                    "pgp_pub_key"     => { 
+                        pgp_pub_key = Some(opt_val.to_compact_string());
+                        pgp_verify = true; 
+                    },
+                    "pgp_verify"      => pgp_verify = opt_val.to_lowercase() == "true",
                     _ => ()
                 }
 
@@ -201,7 +207,8 @@ impl MirrorOpts {
             arch,
             debian_installer_arch,
             source,
-            pgp_pub_key
+            pgp_pub_key,
+            pgp_verify
         })
     }
 

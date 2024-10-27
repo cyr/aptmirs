@@ -98,14 +98,20 @@ pub enum MirsError {
     ReadingPackage { path: FilePath, inner: Box<MirsError> },
 
     #[error("PGP error: {inner}")]
-    Pgp { #[from] inner: pgp::errors::Error },  
+    Pgp { #[from] inner: pgp::errors::Error },
+
+    #[error("PGP key path error: {inner}")]
+    PgpKeyStore { inner: walkdir::Error },
+
+    #[error("PGP key verification error for {path}: {msg}")]
+    PgpKeyVerification { path: FilePath, msg: String },
 
     #[error("unable to read PGP pub key: {inner}")]
-    PgpPubKey { inner: Box<MirsError> },
+    PgpPubKey { path: FilePath, inner: Box<MirsError> },
 
     #[error("this repository does not provide a PGP signature, yet a public key has been provided - no verification can be made")]
     PgpNotSupported,
 
-    #[error("could not verify PGP signature with provided public key")]
+    #[error("could not verify PGP signature")]
     PgpNotVerified,
 }

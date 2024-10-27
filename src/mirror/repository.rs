@@ -1,12 +1,12 @@
-use std::{fs::File, path::Path, str::FromStr};
+use std::{path::Path, str::FromStr};
 
 use compact_str::{format_compact, CompactString, ToCompactString};
-use pgp::{cleartext::CleartextSignedMessage, Deserializable, SignedPublicKey, StandaloneSignature};
+use pgp::{cleartext::CleartextSignedMessage, SignedPublicKey, StandaloneSignature};
 use reqwest::Url;
 
 use super::downloader::Download;
 
-use crate::{config::MirrorOpts, error::{MirsError, Result}, metadata::{checksum::Checksum, release::FileEntry, FilePath, IndexFileEntry}, CliOpts};
+use crate::{config::MirrorOpts, error::{MirsError, Result}, metadata::{checksum::Checksum, release::FileEntry, FilePath, IndexFileEntry}, pgp::{read_public_key, KeyStore}, CliOpts};
 
 pub struct Repository {
     root_url: CompactString,
@@ -28,14 +28,10 @@ impl Repository {
         let parsed_url = Url::parse(&root_url)
             .map_err(|_| MirsError::UrlParsing { url: root_url.clone() })?;
 
+
         let pgp_pub_key = if let Some(pgp_signing_key) = &mirror_opts.pgp_pub_key {
-            let key_file = File::open(pgp_signing_key)
-                .map_err(|e| MirsError::PgpPubKey { inner: Box::new(e.into()) })?;
-
-            let (signed_public_key, _) = SignedPublicKey::from_reader_single(&key_file)
-                .map_err(|e| MirsError::PgpPubKey { inner: Box::new(e.into()) })?;
-
-            Some(signed_public_key)
+            let file = FilePath::from_str(pgp_signing_key.as_ref())?;
+            Some(read_public_key(&file)?)
         } else {
             None
         };
@@ -58,6 +54,10 @@ impl Repository {
             format_compact!("{}/Release", self.dist_url),
             format_compact!("{}/Release.gpg", self.dist_url)
         ]
+    }
+
+    pub fn has_specified_pgp_key(&self) -> bool {
+        self.pgp_pub_key.is_some()
     }
 
     fn to_path_in_local_dir(&self, base: &FilePath, url: &str) -> FilePath {
@@ -200,57 +200,42 @@ impl Repository {
             always_download: false
         }))
     }
+}
 
-    pub fn verify_release_signature(&self, files: &[FilePath]) -> Result<()> {
-        if let Some(pgp_pub_key) = &self.pgp_pub_key {
-            if let Some(inrelease_file) = files.iter().find(|v| v.file_name() == "InRelease") {
-                self.verify_signed_message(pgp_pub_key, inrelease_file)?;
-            } else {
-                let Some(release_file) = files.iter().find(|v| v.file_name() == "Release") else {
-                    return Err(MirsError::PgpNotSupported)
-                };
+impl KeyStore for Repository {
+    fn verify_inlined_signed_release(&self, msg: &CleartextSignedMessage, content: &str) -> Result<()> {
+        let Some(key) = &self.pgp_pub_key else {
+            return Err(MirsError::PgpNotVerified)
+        };
 
-                let Some(release_file_signature) = files.iter().find(|v| v.file_name() == "Release.pgp") else {
-                    return Err(MirsError::PgpNotSupported)
-                };
-                
-                self.verify_message_with_standlone_signature(pgp_pub_key, release_file, release_file_signature)?;
+        for signature in msg.signatures() {
+            if signature.verify(key, content.as_bytes()).is_ok() {
+                return Ok(())
             }
         }
 
-        Ok(())
-    }
-
-    fn verify_signed_message(&self, pgp_pub_key: &SignedPublicKey, file: &FilePath) -> Result<()> {
-        let content = std::fs::read_to_string(file)?;
-
-        let (msg, _) = CleartextSignedMessage::from_string(&content)?;
-
-        if msg.verify(&pgp_pub_key).is_ok() {
-            return Ok(())
-        }
-
-        for subkey in &pgp_pub_key.public_subkeys {
-            if msg.verify(subkey).is_ok() {
-                return Ok(())
+        for sub_key in &key.public_subkeys {
+            for signature in msg.signatures() {
+                if signature.verify(sub_key, content.as_bytes()).is_ok() {
+                    return Ok(())
+                }
             }
         }
 
         Err(MirsError::PgpNotVerified)
     }
 
-    fn verify_message_with_standlone_signature(&self, pgp_pub_key: &SignedPublicKey, release_file: &FilePath, release_file_signature: &FilePath) -> Result<()> {
-        let sign_handle = File::open(release_file_signature)?;
-        let content = std::fs::read_to_string(release_file)?;
+    fn verify_release_with_standalone_signature(&self, signature: &StandaloneSignature, content: &str) -> Result<()> {
+        let Some(key) = &self.pgp_pub_key else {
+            return Err(MirsError::PgpNotVerified)
+        };
 
-        let (signature, _) = StandaloneSignature::from_reader_single(&sign_handle)?;
-
-        if signature.verify(&pgp_pub_key, content.as_bytes()).is_ok() {
+        if signature.verify(key, content.as_bytes()).is_ok() {
             return Ok(())
         }
 
-        for subkey in &pgp_pub_key.public_subkeys {
-            if signature.verify(&subkey, content.as_bytes()).is_ok() {
+        for sub_key in &key.public_subkeys {
+            if signature.verify(sub_key, content.as_bytes()).is_ok() {
                 return Ok(())
             }
         }
