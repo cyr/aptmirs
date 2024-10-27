@@ -21,11 +21,8 @@ async fn main() -> Result<()> {
     let mut downloader = Downloader::build(cli_opts.dl_threads);
 
     let pgp_key_store = if let Some(key_path) = &cli_opts.pgp_key_path {
-        
-        eprintln!("key store online");
         Some(PgpKeyStore::build_from_path(key_path)?)
     } else {
-        eprintln!("no key store possible");
         None
     };
 
@@ -51,10 +48,6 @@ struct CliOpts {
     #[arg(short, long, env, value_name = "OUTPUT",
         help = "The directory where the mirrors will be downloaded into")]
     output: FilePath,
-
-    #[arg(short, long, env, value_name = "UDEB", default_value_t = false,
-        help = "Download packages for debian-installer")]
-    pub udeb: bool,
 
     #[arg(short, long, env, value_name = "DL_THREADS", default_value_t = 8_u8,
         help = "The maximum number of concurrent downloading tasks")]

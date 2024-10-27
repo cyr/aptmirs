@@ -3,7 +3,7 @@ use std::{path::{Path, Component}, collections::{BTreeMap, BTreeSet}};
 use compact_str::{format_compact, CompactString, ToCompactString};
 use tokio::{fs::File, io::{BufReader, AsyncBufReadExt}};
 
-use crate::{error::{Result, MirsError}, config::MirrorOpts, CliOpts};
+use crate::{error::{Result, MirsError}, config::MirrorOpts};
 
 use super::{checksum::Checksum, FilePath};
 
@@ -127,8 +127,8 @@ impl Release {
         self.map.get("Components")
     }
 
-    pub fn into_filtered_files<'a>(self, opts: &'a MirrorOpts, cli_opts: &'a CliOpts) -> ReleaseFileIterator<'a> {
-        ReleaseFileIterator::new(self, opts, cli_opts)
+    pub fn into_filtered_files(self, opts: &MirrorOpts) -> ReleaseFileIterator {
+        ReleaseFileIterator::new(self, opts)
     }
 
     pub fn deduplicate(&mut self, mut old_release: Release) {
@@ -154,7 +154,7 @@ pub struct ReleaseFileIterator<'a> {
 }
 
 impl<'a> ReleaseFileIterator<'a> {
-    pub fn new(release: Release, opts: &'a MirrorOpts, cli_opts: &'a CliOpts) -> Self {
+    pub fn new(release: Release, opts: &'a MirrorOpts) -> Self {
         let (file_prefix_filter, dir_filter) = if opts.source {
             let file_prefix_filter = Vec::from([
                 CompactString::const_new("Release"),
@@ -187,7 +187,7 @@ impl<'a> ReleaseFileIterator<'a> {
                 CompactString::const_new("Packages.diff"),
             ]);
 
-            if cli_opts.udeb {
+            if opts.udeb {
                 file_prefix_filter.push(CompactString::const_new("Contents-udeb-all"));
                 dir_filter.insert(CompactString::const_new("debian-installer"));
             }
@@ -200,7 +200,7 @@ impl<'a> ReleaseFileIterator<'a> {
                 file_prefix_filter.push(format_compact!("Contents-{arch}"));
                 file_prefix_filter.push(format_compact!("Commands-{arch}"));
 
-                if cli_opts.udeb {
+                if opts.udeb {
                     file_prefix_filter.push(format_compact!("Contents-udeb-{arch}"));
                 }
             }

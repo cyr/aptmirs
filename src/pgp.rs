@@ -50,7 +50,7 @@ impl PgpKeyStore {
             };
 
             let fingerprint = hex::encode(public_key.fingerprint().as_bytes());
-            let key_id = hex::encode(&public_key.key_id());
+            let key_id = hex::encode(public_key.key_id());
 
             primary_fingerprints.insert(fingerprint, public_key.clone());
             primary_key_ids.insert(key_id, public_key.clone());
@@ -59,7 +59,7 @@ impl PgpKeyStore {
                 let sub_key = Arc::new(sub_key.clone());
 
                 let fingerprint = hex::encode(sub_key.fingerprint().as_bytes());
-                let key_id = hex::encode(&sub_key.key_id());
+                let key_id = hex::encode(sub_key.key_id());
 
                 sub_fingerprints.insert(fingerprint, sub_key.clone());
                 sub_key_ids.insert(key_id, sub_key);

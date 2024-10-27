@@ -84,7 +84,7 @@ pub async fn mirror(opts: &MirrorOpts, cli_opts: &CliOpts, downloader: &mut Down
 
     progress.next_step("Downloading indices").await;
 
-    let (indices, diff_indices, di_indices) = match download_indices(release, opts, cli_opts, &mut progress, &repo, downloader).await {
+    let (indices, diff_indices, di_indices) = match download_indices(release, opts, &mut progress, &repo, downloader).await {
         Ok((indices, diff_indices, di_indices)) if indices.is_empty() && diff_indices.is_empty() && di_indices.is_empty() => {
             repo.finalize(Vec::new()).await?;
             return Ok(MirrorResult::IrrelevantChanges)
@@ -149,14 +149,14 @@ pub async fn mirror(opts: &MirrorOpts, cli_opts: &CliOpts, downloader: &mut Down
     })
 }
 
-async fn download_indices(release: Release, opts: &MirrorOpts, cli_opts: &CliOpts, progress: &mut Progress, repo: &Repository, downloader: &mut Downloader) -> Result<(Vec<FilePath>, Vec<FilePath>, Vec<FilePath>)> {
+async fn download_indices(release: Release, opts: &MirrorOpts, progress: &mut Progress, repo: &Repository, downloader: &mut Downloader) -> Result<(Vec<FilePath>, Vec<FilePath>, Vec<FilePath>)> {
     let mut indices = Vec::new();
     let mut index_files = Vec::new();
     let mut debian_installer_sumfiles = Vec::new();
 
     let by_hash = release.acquire_by_hash();
 
-    for (path, file_entry) in release.into_filtered_files(opts, cli_opts) {
+    for (path, file_entry) in release.into_filtered_files(opts) {
         let mut add_by_hash = by_hash;
         let url = repo.to_url_in_dist(&path);
 

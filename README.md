@@ -22,25 +22,32 @@ deb http://ftp.se.debian.org/debian             bookworm-backports  main contrib
 deb http://security.debian.org/debian-security  bookworm-security   main contrib non-free non-free-firmware
 ```
 
-Architecture can be specified with [arch=value]. The default value is *amd64*.
+### Config options
+
+|Key|Value|
+|---|------|
+| arch        | The architecture to download packages for, e.g: `amd64`, `arm64`, etc. The default value is `amd64`. |
+| di_arch     | The debian installer image architecture to download, e.g. `amd64`, `arm64`, etc. |
+| udeb        | Whether or not to download udeb packages. The arch used for this is the same as for normal packages. The only recognized value is `true` |
+| pgp_verify  | Whether or not to verify the PGP signature of the release file. If no signature is available, requiring verification will make the mirroring operation fail. This will also require you to provide a source of keys, usually via the `--pgp-key-path` option. The only recognized value is `true`. |
+| pgp_pub_key | Specify a PGP signing key to verify the repository. Any other key provided via the `--pgp-key-path` option will not be used. `pgp_verify` will be set to true if this option is set. |
+
+
+### Examples
+
+Mirror debian repository for *amd64* packages.
 
 ```
 deb [arch=amd64] http://ftp.se.debian.org/debian  bookworm  main contrib non-free non-free-firmware
 ```
 
-To download debian installer image data, specify *di_arch* with the appropriate architecture.
+Mirror debian repository for *arm64* and *amd64* packages, and also download debian installer image for *amd64*.
 
 ```
-deb [di_arch=amd64] http://ftp.se.debian.org/debian  bookworm  main contrib non-free non-free-firmware
+deb [arch=arm64 arch=amd64 di_arch=amd64] http://ftp.se.debian.org/debian  bookworm  main contrib non-free non-free-firmware
 ```
 
-Multiple options can be added inside the same bracket.
-
-```
-deb [arch=amd64 arch=arm64 di_arch=amd64] http://ftp.se.debian.org/debian  bookworm  main contrib non-free non-free-firmware
-```
-
-If you want to require PGP signature verification, either use the `--pgp-key-path` option and set pgp_verify=true on the repository
+Mirror debian repository for *amd64* and verify the PGP signature.
 
 ```
 deb [arch=amd64 pgp_verify=true] http://ftp.se.debian.org/debian  bookworm  main contrib non-free non-free-firmware
@@ -50,13 +57,11 @@ deb [arch=amd64 pgp_verify=true] http://ftp.se.debian.org/debian  bookworm  main
 ./aptmirs --config ./mirror.list --output /opt/mirror-root --pgp-key-path /etc/apt/trusted.gpg.d/
 ```
 
-Or add the pgp_pub_key option pointing at the correct PGP public key.
+Mirror debian repository for *amd64* and verify the PGP signature with a specified key.
 
 ```
 deb [arch=amd64 pgp_pub_key=/etc/apt/trusted.gpg.d/debian-archive-bookworm-stable.asc] http://ftp.se.debian.org/debian  bookworm  main contrib non-free non-free-firmware
 ```
-
-On failed verification the mirroring process will abort.
 
 ## Usage
 
