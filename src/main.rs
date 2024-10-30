@@ -53,8 +53,13 @@ struct CliOpts {
         help = "The maximum number of concurrent downloading tasks")]
     dl_threads: u8,
 
-    #[arg(short, long, env, value_name = "PGP_KEY_PATH")]
+    #[arg(short, long, env, value_name = "PGP_KEY_PATH",
+        help = "Path to folder where PGP public keys reside. All valid keys will be used in signature verification where applicable")]
     pgp_key_path: Option<FilePath>,
+
+    #[arg(short, long, env, value_name = "FORCE",
+        help = "Ignore current release file and package files and assume all metadata is stale")]
+    force: bool
 }
 
 fn now() -> String {

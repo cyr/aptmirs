@@ -155,37 +155,32 @@ pub struct ReleaseFileIterator<'a> {
 
 impl<'a> ReleaseFileIterator<'a> {
     pub fn new(release: Release, opts: &'a MirrorOpts) -> Self {
-        let (file_prefix_filter, dir_filter) = if opts.source {
-            let file_prefix_filter = Vec::from([
-                CompactString::const_new("Release"),
-                CompactString::const_new("Sources"),
-            ]);
-            
-            let dir_filter = BTreeSet::from([
-                CompactString::const_new("source"),
-            ]);
+        let mut file_prefix_filter = Vec::new();
+        let mut dir_filter = BTreeSet::new();
 
-            (file_prefix_filter, dir_filter)
-        } else {
-            let mut file_prefix_filter = Vec::from([
-                CompactString::const_new("Release"),
-                CompactString::const_new("Contents-all"),
-                CompactString::const_new("Components-all"),
-                CompactString::const_new("Commands-all"),
-                CompactString::const_new("Packages"),
-                CompactString::const_new("icons"),
-                CompactString::const_new("Translation"),
-                CompactString::const_new("Index"),
-            ]);
+        file_prefix_filter.push(CompactString::const_new("Release"));
+
+        if opts.source {
+            file_prefix_filter.push(CompactString::const_new("Sources"));
+
+            dir_filter.insert(CompactString::const_new("source"));
+        }
+
+        if opts.packages {
+            file_prefix_filter.push(CompactString::const_new("Contents-all"));
+            file_prefix_filter.push(CompactString::const_new("Components-all"));
+            file_prefix_filter.push(CompactString::const_new("Commands-all"));
+            file_prefix_filter.push(CompactString::const_new("Packages"));
+            file_prefix_filter.push(CompactString::const_new("icons"));
+            file_prefix_filter.push(CompactString::const_new("Translation"));
+            file_prefix_filter.push(CompactString::const_new("Index"));
             
-            let mut dir_filter = BTreeSet::from([
-                CompactString::const_new("dep11"),
-                CompactString::const_new("i18n"),
-                CompactString::const_new("binary-all"),
-                CompactString::const_new("cnf"),
-                CompactString::const_new("Contents-all.diff"),
-                CompactString::const_new("Packages.diff"),
-            ]);
+            dir_filter.insert(CompactString::const_new("dep11"));
+            dir_filter.insert(CompactString::const_new("i18n"));
+            dir_filter.insert(CompactString::const_new("binary-all"));
+            dir_filter.insert(CompactString::const_new("cnf"));
+            dir_filter.insert(CompactString::const_new("Contents-all.diff"));
+            dir_filter.insert(CompactString::const_new("Packages.diff"));
 
             if opts.udeb {
                 file_prefix_filter.push(CompactString::const_new("Contents-udeb-all"));
@@ -218,7 +213,6 @@ impl<'a> ReleaseFileIterator<'a> {
                 }
             }
             
-            (file_prefix_filter, dir_filter)
         };
 
         Self {

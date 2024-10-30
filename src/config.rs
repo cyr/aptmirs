@@ -61,7 +61,10 @@ fn merge_similar(mut mirrors: Vec<MirrorOpts>) -> Vec<MirrorOpts> {
         if let Some(last) = a.last_mut() {
             if last == &v {
                 last.components.append(&mut v.components);
-                v.debian_installer_arch.append(&mut last.debian_installer_arch);
+                last.debian_installer_arch.append(&mut v.debian_installer_arch);
+
+                v.packages |= last.packages;
+                v.source |= last.source;
             } else {
                 a.push(v)
             }
@@ -83,6 +86,7 @@ pub struct MirrorOpts {
     pub arch: Vec<CompactString>,
     pub debian_installer_arch: Vec<CompactString>,
     pub source: bool,
+    pub packages: bool,
     pub pgp_pub_key: Option<CompactString>,
     pub pgp_verify: bool,
     pub udeb: bool,
@@ -138,12 +142,14 @@ impl MirrorOpts {
         let mut pgp_verify = false;
         let mut udeb = false;
         
+        let mut packages = false;
         let mut source = false;
 
         line = if let Some(line) = line.strip_prefix("deb-src") {
             source = true;
             line
         } else if let Some(line) = line.strip_prefix("deb") {
+            packages = true;
             line
         } else {
             return Err(MirsError::Config { msg: CompactString::new("mirror config must start with either 'deb' or 'deb-src'") })
@@ -210,6 +216,7 @@ impl MirrorOpts {
             arch,
             debian_installer_arch,
             source,
+            packages,
             pgp_pub_key,
             pgp_verify,
             udeb

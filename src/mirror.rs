@@ -58,7 +58,7 @@ pub async fn mirror(opts: &MirrorOpts, cli_opts: &CliOpts, downloader: &mut Down
 
     progress.next_step("Downloading release").await;
 
-    let release = match download_release(&repo, downloader, opts, key_store).await {
+    let release = match download_release(&repo, downloader, opts, cli_opts, key_store).await {
         Ok(Some(release)) => release,
         Ok(None) => {
             _ = repo.delete_tmp();
@@ -84,7 +84,7 @@ pub async fn mirror(opts: &MirrorOpts, cli_opts: &CliOpts, downloader: &mut Down
 
     progress.next_step("Downloading indices").await;
 
-    let (indices, diff_indices, di_indices) = match download_indices(release, opts, &mut progress, &repo, downloader).await {
+    let (indices, diff_indices, di_indices) = match download_indices(release, opts, cli_opts, &mut progress, &repo, downloader).await {
         Ok((indices, diff_indices, di_indices)) if indices.is_empty() && diff_indices.is_empty() && di_indices.is_empty() => {
             repo.finalize(Vec::new()).await?;
             return Ok(MirrorResult::IrrelevantChanges)
@@ -149,7 +149,7 @@ pub async fn mirror(opts: &MirrorOpts, cli_opts: &CliOpts, downloader: &mut Down
     })
 }
 
-async fn download_indices(release: Release, opts: &MirrorOpts, progress: &mut Progress, repo: &Repository, downloader: &mut Downloader) -> Result<(Vec<FilePath>, Vec<FilePath>, Vec<FilePath>)> {
+async fn download_indices(release: Release, opts: &MirrorOpts, cli_opts: &CliOpts, progress: &mut Progress, repo: &Repository, downloader: &mut Downloader) -> Result<(Vec<FilePath>, Vec<FilePath>, Vec<FilePath>)> {
     let mut indices = Vec::new();
     let mut index_files = Vec::new();
     let mut debian_installer_sumfiles = Vec::new();
@@ -175,7 +175,7 @@ async fn download_indices(release: Release, opts: &MirrorOpts, progress: &mut Pr
 
             let checksum_path = FilePath(format_compact!("{by_hash_base}/{}", checksum.relative_path()));
 
-            if checksum_path.exists() && file_path_in_root.exists() {
+            if checksum_path.exists() && file_path_in_root.exists() && !cli_opts.force {
                 continue
             }
         }
@@ -352,7 +352,7 @@ pub async fn download_from_indices(repo: &Repository, downloader: &mut Downloade
     Ok(())
 }
 
-pub async fn download_release(repository: &Repository, downloader: &mut Downloader, opts: &MirrorOpts, key_store: &Option<PgpKeyStore>) -> Result<Option<Release>> {
+pub async fn download_release(repository: &Repository, downloader: &mut Downloader, opts: &MirrorOpts, cli_opts: &CliOpts, key_store: &Option<PgpKeyStore>) -> Result<Option<Release>> {
     let mut files = Vec::with_capacity(3);
 
     let mut progress = downloader.progress();
@@ -406,7 +406,7 @@ pub async fn download_release(repository: &Repository, downloader: &mut Download
     // of how all metadata files are moved into the repository path after the mirroring operation
     // is completed successfully, there should be nothing more to do. save bandwidth, save lives!
     let old_release = if let Some(local_release_file) = repository.tmp_to_root(release_file) {
-        if local_release_file.exists() {
+        if local_release_file.exists() && !cli_opts.force {
             let tmp_checksum = Checksum::checksum_file(&local_release_file).await?;
             let local_checksum = Checksum::checksum_file(release_file).await?;
 
