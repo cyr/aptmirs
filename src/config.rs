@@ -50,11 +50,6 @@ pub async fn read_config(path: &FilePath) -> Result<Vec<MirrorOpts>> {
 }
 
 fn merge_similar(mut mirrors: Vec<MirrorOpts>) -> Vec<MirrorOpts> {
-    for mirror in mirrors.iter_mut() {
-        mirror.arch.sort();
-        mirror.components.sort_unstable();
-    }
-
     mirrors.sort();
 
     let merged_mirrors = mirrors.into_iter().fold(Vec::new(), |mut a: Vec<MirrorOpts>, mut new| {
