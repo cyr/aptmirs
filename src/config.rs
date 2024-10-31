@@ -62,7 +62,8 @@ fn merge_similar(mut mirrors: Vec<MirrorOpts>) -> Vec<MirrorOpts> {
             if last == &v {
                 last.components.append(&mut v.components);
                 last.debian_installer_arch.append(&mut v.debian_installer_arch);
-
+                
+                last.udeb |= v.udeb;
                 v.packages |= last.packages;
                 v.source |= last.source;
             } else {
