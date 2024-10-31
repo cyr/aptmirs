@@ -57,26 +57,41 @@ fn merge_similar(mut mirrors: Vec<MirrorOpts>) -> Vec<MirrorOpts> {
 
     mirrors.sort();
 
-    let merged_mirrors = mirrors.into_iter().fold(Vec::new(), |mut a: Vec<MirrorOpts>, mut v| {
+    let merged_mirrors = mirrors.into_iter().fold(Vec::new(), |mut a: Vec<MirrorOpts>, mut new| {
         if let Some(last) = a.last_mut() {
-            if last == &v {
-                last.components.append(&mut v.components);
-                last.debian_installer_arch.append(&mut v.debian_installer_arch);
-                
-                last.udeb |= v.udeb;
-                last.packages |= v.packages;
-                last.source |= v.source;
+            if last == &new {
+                for component in new.components {
+                    if !last.components.contains(&component) {
+                        last.components.push(component);
+                    }
+                }
 
-                last.pgp_verify |= v.pgp_verify;
+                for arch in new.arch {
+                    if !last.arch.contains(&arch) {
+                        last.arch.push(arch);
+                    }
+                }
+
+                for di_arch in new.debian_installer_arch {
+                    if !last.debian_installer_arch.contains(&di_arch) {
+                        last.debian_installer_arch.push(di_arch);
+                    }
+                }
                 
-                if let Some(pgp_pub_key) = v.pgp_pub_key.take() {
+                last.udeb |= new.udeb;
+                last.packages |= new.packages;
+                last.source |= new.source;
+
+                last.pgp_verify |= new.pgp_verify;
+                
+                if let Some(pgp_pub_key) = new.pgp_pub_key.take() {
                     last.pgp_pub_key = Some(pgp_pub_key)
                 }
             } else {
-                a.push(v)
+                a.push(new)
             }
         } else {
-            a.push(v);
+            a.push(new);
         }
 
         a
@@ -106,18 +121,13 @@ impl Ord for MirrorOpts {
             ord => return ord
         }
 
-        match self.suite.cmp(&other.suite) {
-            Ordering::Equal => {}
-            ord => return ord
-        }
-
-        self.arch.cmp(&other.arch)
+        self.suite.cmp(&other.suite)
     }
 }
 
 impl PartialEq for MirrorOpts {
     fn eq(&self, other: &Self) -> bool {
-        self.url == other.url && self.suite == other.suite && self.arch == other.arch
+        self.url == other.url && self.suite == other.suite
     }
 }
 
