@@ -2,9 +2,12 @@ use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::str::FromStr;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 use compact_str::format_compact;
 use indicatif::{MultiProgress, HumanBytes};
+use tokio::runtime::Handle;
+use tokio::task::spawn_blocking;
 
 use crate::metadata::diff_index_file::DiffIndexFile;
 use crate::metadata::sum_file::{to_strongest_by_checksum, SumFileEntry};
@@ -44,7 +47,7 @@ impl Display for MirrorResult {
     }
 }
 
-pub async fn mirror(opts: &MirrorOpts, cli_opts: &CliOpts, downloader: &mut Downloader, key_store: &Option<PgpKeyStore>) -> Result<MirrorResult> {
+pub async fn mirror(opts: &MirrorOpts, cli_opts: &CliOpts, mut downloader: Downloader, key_store: &Option<PgpKeyStore>) -> Result<MirrorResult> {
     let repo = Repository::build(opts, cli_opts)?;
 
     let mut progress = downloader.progress();
@@ -58,7 +61,7 @@ pub async fn mirror(opts: &MirrorOpts, cli_opts: &CliOpts, downloader: &mut Down
 
     progress.next_step("Downloading release").await;
 
-    let release = match download_release(&repo, downloader, opts, cli_opts, key_store).await {
+    let release = match download_release(&repo, &mut downloader, opts, cli_opts, key_store).await {
         Ok(Some(release)) => release,
         Ok(None) => {
             _ = repo.delete_tmp();
@@ -84,7 +87,7 @@ pub async fn mirror(opts: &MirrorOpts, cli_opts: &CliOpts, downloader: &mut Down
 
     progress.next_step("Downloading indices").await;
 
-    let (indices, diff_indices, di_indices) = match download_indices(release, opts, cli_opts, &mut progress, &repo, downloader).await {
+    let (indices, diff_indices, di_indices) = match download_indices(release, opts, cli_opts, &mut progress, &repo, &mut downloader).await {
         Ok((indices, diff_indices, di_indices)) if indices.is_empty() && diff_indices.is_empty() && di_indices.is_empty() => {
             repo.finalize(Vec::new()).await?;
             return Ok(MirrorResult::IrrelevantChanges)
@@ -100,7 +103,7 @@ pub async fn mirror(opts: &MirrorOpts, cli_opts: &CliOpts, downloader: &mut Down
 
     progress.next_step("Downloading diffs").await;
 
-    if let Err(e) = download_from_diff_indices(&repo, downloader, &mut progress, diff_indices).await {
+    if let Err(e) = download_from_diff_indices(&repo, &mut downloader, &mut progress, diff_indices).await {
         _ = repo.delete_tmp();
         return Err(MirsError::DownloadDiffs { inner: Box::new(e) })
     }
@@ -110,7 +113,7 @@ pub async fn mirror(opts: &MirrorOpts, cli_opts: &CliOpts, downloader: &mut Down
     progress.next_step("Downloading packages").await;
 
      
-    if let Err(e) = download_from_indices(&repo, downloader, indices).await {
+    if let Err(e) = download_from_indices(repo.clone(), downloader.clone(), indices).await {
         _ = repo.delete_tmp();
         return Err(MirsError::DownloadPackages { inner: Box::new(e) })
     }
@@ -123,7 +126,7 @@ pub async fn mirror(opts: &MirrorOpts, cli_opts: &CliOpts, downloader: &mut Down
     let paths_to_delete = if opts.debian_installer() { 
         progress.next_step("Downloading debian installer").await;
 
-        let paths = match download_debian_installer(&repo, downloader, &mut progress, di_indices).await {
+        let paths = match download_debian_installer(&repo, &mut downloader, &mut progress, di_indices).await {
             Ok(paths) => paths,
             Err(e) => {
                 _ = repo.delete_tmp();
@@ -286,7 +289,7 @@ pub async fn download_from_diff_indices(repo: &Repository, downloader: &mut Down
     Ok(())
 }
 
-pub async fn download_from_indices(repo: &Repository, downloader: &mut Downloader, indices: Vec<FilePath>) -> Result<()> {
+pub async fn download_from_indices(repo: Arc<Repository>, mut downloader: Downloader, indices: Vec<FilePath>) -> Result<()> {
     let multi_bar = MultiProgress::new();
 
     let mut file_progress = Progress::new_with_step(3, "Processing indices");
@@ -326,26 +329,37 @@ pub async fn download_from_indices(repo: &Repository, downloader: &mut Downloade
 
     file_progress.bytes.inc_total(total_size);
 
-    for packages_file in packages_files {
-        let counter = packages_file.counter();
-        file_progress.update_for_bytes(&mut file_progress_bar);
-        let package_size = packages_file.size();
+    let task_repo = repo.clone();
+    let mut task_dl_progress_bar = dl_progress_bar.clone();
+    let task_dl_progress = dl_progress.clone();
 
-        for package in packages_file {
-            let package = package?;
-
-            let dl = repo.create_file_download(package);
-            downloader.queue(dl).await?;
-            
-            file_progress.bytes.set_success(counter.load(Ordering::SeqCst) + incremental_size_base);
-
-            dl_progress.update_for_files(&mut dl_progress_bar);
+    let async_handle = Handle::current();
+    spawn_blocking(move || {
+        for packages_file in packages_files {
+            let counter = packages_file.counter();
+            file_progress.update_for_bytes(&mut file_progress_bar);
+            let package_size = packages_file.size();
+    
+            for package in packages_file {
+                let package = package?;
+    
+                let dl = task_repo.create_file_download(package);
+                async_handle.block_on(async {
+                    downloader.queue(dl).await
+                })?;
+                
+                file_progress.bytes.set_success(counter.load(Ordering::SeqCst) + incremental_size_base);
+    
+                task_dl_progress.update_for_files(&mut task_dl_progress_bar);
+                file_progress.update_for_bytes(&mut file_progress_bar);
+            }
+    
+            incremental_size_base += package_size;
             file_progress.update_for_bytes(&mut file_progress_bar);
         }
 
-        incremental_size_base += package_size;
-        file_progress.update_for_bytes(&mut file_progress_bar);
-    }
+        Ok::<(), MirsError>(())
+    }).await??;
 
     dl_progress.wait_for_completion(&mut dl_progress_bar).await;
 

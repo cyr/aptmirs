@@ -18,7 +18,7 @@ async fn main() -> Result<()> {
 
     let opts = read_config(&cli_opts.config).await?;
 
-    let mut downloader = Downloader::build(cli_opts.dl_threads);
+    let downloader = Downloader::build(cli_opts.dl_threads);
 
     let pgp_key_store = if let Some(key_path) = &cli_opts.pgp_key_path {
         Some(PgpKeyStore::build_from_path(key_path)?)
@@ -29,7 +29,7 @@ async fn main() -> Result<()> {
     for opt in opts {
         println!("{} Mirroring {}", now(), &opt);
 
-        match mirror::mirror(&opt, &cli_opts, &mut downloader, &pgp_key_store).await {
+        match mirror::mirror(&opt, &cli_opts, downloader.clone(), &pgp_key_store).await {
             Ok(result) => println!("{} Mirroring done: {result}", now()),
             Err(e) => println!("{} Mirroring failed: {e}", now())
         }

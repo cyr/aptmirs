@@ -10,6 +10,7 @@ use crate::{error::{MirsError, Result}, metadata::{checksum::Checksum, FilePath}
 
 use super::progress::Progress;
 
+#[derive(Clone)]
 pub struct Downloader {
     sender: Sender<Box<Download>>,
     _tasks: Arc<Vec<JoinHandle<()>>>,

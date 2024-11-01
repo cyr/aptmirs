@@ -12,7 +12,7 @@ pub struct SourceEntry {
 }
 
 pub struct SourcesFile {
-    reader: Box<dyn BufRead>,
+    reader: Box<dyn BufRead + Send>,
     path: FilePath,
     buf: String,
     files_buf: BTreeMap<CompactString, SourceEntry>,

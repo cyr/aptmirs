@@ -7,7 +7,7 @@ use crate::error::{Result, MirsError};
 use super::{checksum::{Checksum, ChecksumType}, create_reader, FilePath, IndexFileEntry, IndexFileEntryIterator};
 
 pub struct PackagesFile {
-    reader: Box<dyn BufRead>,
+    reader: Box<dyn BufRead + Send>,
     path: FilePath,
     buf: String,
     size: u64,

@@ -1,4 +1,4 @@
-use std::{path::Path, str::FromStr};
+use std::{path::Path, str::FromStr, sync::Arc};
 
 use compact_str::{format_compact, CompactString, ToCompactString};
 use pgp::{cleartext::CleartextSignedMessage, SignedPublicKey, StandaloneSignature};
@@ -17,7 +17,7 @@ pub struct Repository {
 }
 
 impl Repository {
-    pub fn build(mirror_opts: &MirrorOpts, cli_opts: &CliOpts) -> Result<Self> {
+    pub fn build(mirror_opts: &MirrorOpts, cli_opts: &CliOpts) -> Result<Arc<Self>> {
         let root_url = match &mirror_opts.url.as_str().strip_prefix('/') {
             Some(url) => url.to_compact_string(),
             None => mirror_opts.url.clone(),
@@ -39,13 +39,13 @@ impl Repository {
         let root_dir = local_dir_from_archive_url(&parsed_url, &cli_opts.output)?;
         let tmp_dir = create_tmp_dir(&parsed_url, &mirror_opts.suite, &cli_opts.output)?;
 
-        Ok(Self {
+        Ok(Arc::new(Self {
             root_url,
             root_dir,
             dist_url,
             tmp_dir,
             pgp_pub_key
-        })
+        }))
     }
 
     pub fn release_urls(&self) -> [CompactString; 3] {

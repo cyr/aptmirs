@@ -140,7 +140,7 @@ impl From<FilePath> for IndexSource {
     }
 }
 
-pub trait IndexFileEntryIterator : Iterator<Item = Result<IndexFileEntry>> {
+pub trait IndexFileEntryIterator : Iterator<Item = Result<IndexFileEntry>> + Send {
     fn size(&self) -> u64;
     fn counter(&self) -> Arc<AtomicU64>;
 }
@@ -167,7 +167,7 @@ impl<R: Read> Read for TrackingReader<R> {
     }
 }
 
-pub fn create_reader<R: Read + 'static>(file: R, path: &FilePath) -> Result<(Box<dyn BufRead>, Arc<AtomicU64>)> {
+pub fn create_reader<R: Read + Send + 'static>(file: R, path: &FilePath) -> Result<(Box<dyn BufRead + Send>, Arc<AtomicU64>)> {
     let counter = Arc::new(AtomicU64::from(0));
 
     let file_reader = TrackingReader {
@@ -175,7 +175,7 @@ pub fn create_reader<R: Read + 'static>(file: R, path: &FilePath) -> Result<(Box
         read: counter.clone(),
     };
 
-    let reader: Box<dyn BufRead> = match path.extension() {
+    let reader: Box<dyn BufRead + Send> = match path.extension() {
         Some("xz") => {
             let xz_decoder = xz2::read::XzDecoder::new_multi_decoder(file_reader);
             Box::new(BufReader::with_capacity(1024*1024, xz_decoder))
