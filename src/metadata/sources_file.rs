@@ -1,6 +1,6 @@
-use std::{fs::File, io::BufRead, sync::{atomic::AtomicU64, Arc}, collections::BTreeMap};
+use std::{collections::BTreeMap, fs::File, io::BufRead, sync::{atomic::AtomicU64, Arc}};
 
-use compact_str::{format_compact, CompactString};
+use compact_str::{format_compact, CompactString, ToCompactString};
 
 use crate::error::{Result, MirsError};
 
@@ -53,6 +53,8 @@ impl Iterator for SourcesFile {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.files_buf.is_empty() {
+            let mut maybe_dir = None;
+
             loop {
                 match self.reader.read_line(&mut self.buf) {
                     Ok(0) => return None,
@@ -67,13 +69,11 @@ impl Iterator for SourcesFile {
                 }
             }
     
-            let mut dir = None;
-    
             let mut line_iter = self.buf.lines().peekable();
     
             while let Some(line) = line_iter.next() {
                 if let Some(d) = line.strip_prefix("Directory: ") {
-                    dir = Some(d)
+                    maybe_dir = Some(d)
                 } else if matches!(line, "Files:" | "Checksums-Sha1:" | "Checksums-Sha256:" | "Checksums-Sha512:") {
                     while let Some(line) = line_iter.next() {
                         let mut parts = line.split_whitespace();
@@ -99,29 +99,36 @@ impl Iterator for SourcesFile {
                         let Some(file_name) = parts.next() else {
                             return Some(Err(MirsError::ParsingSources { path: self.path.clone() }))
                         };
-    
-                        let rel_path = if let Some(dir) = dir {
-                            format_compact!("{dir}/{file_name}")
-                        } else {
-                            return Some(Err(MirsError::ParsingSources { path: self.path.clone() }))
-                        };
+
+                        let file_name = CompactString::from(file_name);
                         
-                        if let Some(entry) = self.files_buf.get_mut(&rel_path) {
+                        if let Some(entry) = self.files_buf.get_mut(&file_name) {
                             entry.checksum.replace_if_stronger(checksum)
                         } else {
-                            self.files_buf.insert(rel_path, SourceEntry {
+                            self.files_buf.insert(file_name.to_compact_string(), SourceEntry {
                                 size,
                                 checksum
                             });
                         }
 
                         if line_iter.peek().is_some_and(|v| !v.starts_with(' ')) {
-                            _ = line_iter.next();
                             break
                         }
                     }
                 }
             }
+
+            let Some(dir) = maybe_dir else {
+                return Some(Err(MirsError::ParsingSources { path: self.path.clone() }))
+            };
+
+            let mut new_map = BTreeMap::new();
+
+            while let Some((file_name, entry)) = self.files_buf.pop_first() {
+                new_map.insert(format_compact!("{dir}/{file_name}"), entry);
+            }
+
+            self.files_buf = new_map;
 
             self.buf.clear();
         }
