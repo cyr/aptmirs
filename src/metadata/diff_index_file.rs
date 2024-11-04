@@ -37,7 +37,6 @@ impl DiffIndexFile {
 
             let line = (buf[..len]).trim_end();
 
-
             match line {
                 _ if line.ends_with("Download:") => {
                     in_download_scope = true;

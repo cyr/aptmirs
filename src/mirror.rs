@@ -87,7 +87,7 @@ pub async fn mirror(opts: &MirrorOpts, cli_opts: &CliOpts, mut downloader: Downl
 
     progress.next_step("Downloading indices").await;
 
-    let (indices, diff_indices, di_indices) = match download_indices(release, opts, cli_opts, &mut progress, &repo, &mut downloader).await {
+    let (package_files, diff_indices, di_indices) = match download_indices(release, opts, cli_opts, &mut progress, &repo, &mut downloader).await {
         Ok((indices, diff_indices, di_indices)) if indices.is_empty() && diff_indices.is_empty() && di_indices.is_empty() => {
             repo.finalize(Vec::new()).await?;
             return Ok(MirrorResult::IrrelevantChanges)
@@ -112,8 +112,7 @@ pub async fn mirror(opts: &MirrorOpts, cli_opts: &CliOpts, mut downloader: Downl
 
     progress.next_step("Downloading packages").await;
 
-     
-    if let Err(e) = download_from_indices(repo.clone(), downloader.clone(), indices).await {
+    if let Err(e) = download_from_indices(repo.clone(), downloader.clone(), package_files).await {
         _ = repo.delete_tmp();
         return Err(MirsError::DownloadPackages { inner: Box::new(e) })
     }
@@ -153,8 +152,8 @@ pub async fn mirror(opts: &MirrorOpts, cli_opts: &CliOpts, mut downloader: Downl
 }
 
 async fn download_indices(release: Release, opts: &MirrorOpts, cli_opts: &CliOpts, progress: &mut Progress, repo: &Repository, downloader: &mut Downloader) -> Result<(Vec<FilePath>, Vec<FilePath>, Vec<FilePath>)> {
-    let mut indices = Vec::new();
-    let mut index_files = Vec::new();
+    let mut package_files = Vec::new();
+    let mut diff_index_files = Vec::new();
     let mut debian_installer_sumfiles = Vec::new();
 
     let by_hash = release.acquire_by_hash();
@@ -184,11 +183,11 @@ async fn download_indices(release: Release, opts: &MirrorOpts, cli_opts: &CliOpt
         }
 
         if is_packages_file(&path) || is_sources_file(&path) {
-            indices.push(file_path_in_tmp.clone());
+            package_files.push(file_path_in_tmp.clone());
         }
 
-        if is_index_file(&path) {
-            index_files.push(file_path_in_tmp.clone());
+        if is_diff_index_file(&path) {
+            diff_index_files.push(file_path_in_tmp.clone());
         }
 
         if is_debian_installer_file(&path) {
@@ -203,7 +202,26 @@ async fn download_indices(release: Release, opts: &MirrorOpts, cli_opts: &CliOpt
     let mut progress_bar = progress.create_download_progress_bar().await;
     progress.wait_for_completion(&mut progress_bar).await;
 
-    Ok((indices, index_files, debian_installer_sumfiles))
+    verify_and_prune(&mut package_files);
+    verify_and_prune(&mut diff_index_files);
+    verify_and_prune(&mut debian_installer_sumfiles);
+
+    Ok((package_files, diff_index_files, debian_installer_sumfiles))
+}
+
+fn verify_and_prune(files: &mut Vec<FilePath>) {
+    let mut pos = 0;
+    loop {
+        if pos >= files.len() {
+            break
+        }
+
+        if !files[pos].exists() {
+            files.swap_remove(pos);
+        } else {
+            pos += 1;
+        }
+    }
 }
 
 pub async fn download_debian_installer(repo: &Repository, downloader: &mut Downloader, progress: &mut Progress, di_indices: Vec<FilePath>) -> Result<Vec<FilePath>> {
@@ -464,7 +482,7 @@ fn is_packages_file(path: &str) -> bool {
         path.ends_with("Packages.bz2")
 }
 
-fn is_index_file(path: &str) -> bool {
+fn is_diff_index_file(path: &str) -> bool {
     path.ends_with("Index")
 }
 
