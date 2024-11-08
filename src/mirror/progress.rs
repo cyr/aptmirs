@@ -108,18 +108,18 @@ impl Progress {
         progress_bar.set_message(HumanBytes(self.bytes.success()).to_string());
     }
 
-    pub fn reset(&mut self) {
+    pub fn reset(&self) {
         self.bytes.reset();
         self.files.reset();
         self.step.store(0, Ordering::SeqCst);
         self.total_steps.store(5, Ordering::SeqCst);
     }
 
-    pub fn set_total_steps(&mut self, num_steps: u8) {
+    pub fn set_total_steps(&self, num_steps: u8) {
         self.total_steps.store(num_steps, Ordering::SeqCst);
     }
 
-    pub async fn next_step(&mut self, step_name: &str) {
+    pub async fn next_step(&self, step_name: &str) {
         *self.step_name.lock().await = step_name.to_string();
 
         self.bytes.reset();
@@ -128,7 +128,7 @@ impl Progress {
         self.step.fetch_add(1, Ordering::SeqCst);
     }
     
-    pub async fn wait_for_completion(&mut self, progress_bar: &mut ProgressBar)  {
+    pub async fn wait_for_completion(&self, progress_bar: &mut ProgressBar)  {
         while self.files.remaining() > 0 {
             self.update_for_files(progress_bar);
             sleep(Duration::from_millis(100)).await
@@ -158,19 +158,19 @@ impl ProgressPart {
         }
     }
 
-    pub fn inc_total(&mut self, count: u64) {
+    pub fn inc_total(&self, count: u64) {
         self.total.fetch_add(count, Ordering::SeqCst);
     }
 
-    pub fn inc_success(&mut self, count: u64) {
+    pub fn inc_success(&self, count: u64) {
         self.success.fetch_add(count, Ordering::SeqCst);
     }
 
-    pub fn set_success(&mut self, count: u64) {
+    pub fn set_success(&self, count: u64) {
         self.success.store(count, Ordering::SeqCst)
     }
 
-    pub fn inc_skipped(&mut self, count: u64) {
+    pub fn inc_skipped(&self, count: u64) {
         self.skipped.fetch_add(count, Ordering::SeqCst);
     }
 
@@ -188,7 +188,7 @@ impl ProgressPart {
             self.skipped.load(Ordering::SeqCst)
     }
 
-    pub fn reset(&mut self) {
+    pub fn reset(&self) {
         self.total.store(0, Ordering::SeqCst);
         self.success.store(0, Ordering::SeqCst);
         self.skipped.store(0, Ordering::SeqCst);

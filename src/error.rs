@@ -80,7 +80,7 @@ pub enum MirsError {
     DownloadRelease { inner: Box<MirsError> },
     
     #[error("error occurred while downloading indices: {inner}")]
-    DownloadIndices { inner: Box<MirsError> },
+    DownloadMetadata { inner: Box<MirsError> },
     
     #[error("error occurred while downloading diffs: {inner}")]
     DownloadDiffs { inner: Box<MirsError> },

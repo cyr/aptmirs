@@ -146,6 +146,65 @@ impl Release {
     }
 }
 
+pub enum MetadataFile {
+    Packages(CompactString),
+    Sources(CompactString),
+    DiffIndex(CompactString),
+    DebianInstallerSumFile(CompactString),
+    Other(CompactString)
+}
+
+impl AsRef<str> for MetadataFile {
+    fn as_ref(&self) -> &str {
+        match self {
+            MetadataFile::Packages(s) |
+            MetadataFile::Sources(s) |
+            MetadataFile::DiffIndex(s) |
+            MetadataFile::DebianInstallerSumFile(s) |
+            MetadataFile::Other(s) => s.as_ref()
+        }
+    }
+}
+
+impl From<CompactString> for MetadataFile {
+    fn from(value: CompactString) -> Self {
+        if is_packages_file(&value) {
+            MetadataFile::Packages(value)
+        } else if is_sources_file(&value) {
+            MetadataFile::Sources(value)
+        } else if is_diff_index_file(&value) {
+            MetadataFile::DiffIndex(value)
+        } else if is_debian_installer_file(&value) {
+            MetadataFile::DebianInstallerSumFile(value)
+        } else {
+            MetadataFile::Other(value)
+        }
+    }
+}
+
+fn is_packages_file(path: &str) -> bool {
+    path.ends_with("Packages") ||
+        path.ends_with("Packages.gz") || 
+        path.ends_with("Packages.xz") ||
+        path.ends_with("Packages.bz2")
+}
+
+fn is_diff_index_file(path: &str) -> bool {
+    path.ends_with("Index")
+}
+
+fn is_debian_installer_file(path: &str) -> bool {
+    path.contains("installer-") &&
+        path.ends_with("SUMS")
+}
+
+fn is_sources_file(path: &str) -> bool {
+    path.ends_with("Sources") || 
+        path.ends_with("Sources.gz") ||
+        path.ends_with("Sources.xz") ||
+        path.ends_with("Sources.bz2")
+}
+
 pub struct ReleaseFileIterator<'a> {
     release: Release,
     opts: &'a MirrorOpts,
@@ -225,7 +284,7 @@ impl<'a> ReleaseFileIterator<'a> {
 }
 
 impl<'a> Iterator for ReleaseFileIterator<'a> {
-    type Item = (CompactString, FileEntry);
+    type Item = (MetadataFile, FileEntry);
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -252,7 +311,7 @@ impl<'a> Iterator for ReleaseFileIterator<'a> {
 
                         if parts.peek().is_none() {
                             if self.file_prefix_filter.iter().any(|v| part_name.starts_with(v.as_str())) {
-                                return Some((path, file_entry))
+                                return Some((path.into(), file_entry))
                             }
 
                             break
@@ -280,16 +339,11 @@ impl<'a> FileLine<'a> {
     pub fn parse(value: &'a str) -> Result<Self> {
         let mut parts = value.split_ascii_whitespace();
 
-        let checksum = parts.next()
-            .ok_or_else(|| MirsError::ParsingRelease { line: value.to_compact_string() })?;
+        let (Some(checksum), Some(size), Some(path)) = (parts.next(), parts.next(), parts.next()) else {
+            return Err(MirsError::ParsingRelease { line: value.to_compact_string() })
+        };
 
-        let size = parts.next()
-            .ok_or_else(|| MirsError::ParsingRelease { line: value.to_compact_string() })?
-            .parse()
-            .map_err(|_| MirsError::ParsingRelease { line: value.to_compact_string() })?;
-
-        let path = parts.next()
-            .ok_or_else(|| MirsError::ParsingRelease { line: value.to_compact_string() })?;
+        let size = size.parse()?;
 
         Ok(Self {
             path,

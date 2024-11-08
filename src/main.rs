@@ -1,7 +1,9 @@
+use std::{fmt::Display, sync::Arc};
+
 use clap::{command, arg, Parser};
 use config::read_config;
 use metadata::FilePath;
-use mirror::downloader::Downloader;
+use mirror::{context::Context, downloader::Downloader};
 use pgp::PgpKeyStore;
 
 use crate::error::Result;
@@ -14,24 +16,22 @@ mod pgp;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let cli_opts = CliOpts::parse();
+    let cli_opts = Arc::new(CliOpts::parse());
 
     let opts = read_config(&cli_opts.config).await?;
 
     let downloader = Downloader::build(cli_opts.dl_threads);
 
-    let pgp_key_store = if let Some(key_path) = &cli_opts.pgp_key_path {
-        Some(PgpKeyStore::build_from_path(key_path)?)
-    } else {
-        None
-    };
+    let pgp_key_store = Arc::new(PgpKeyStore::try_from(&cli_opts)?);
 
-    for opt in opts {
-        println!("{} Mirroring {}", now(), &opt);
+    for mirror_opts in opts {
+        log(format!("Mirroring {mirror_opts}"));
 
-        match mirror::mirror(&opt, &cli_opts, downloader.clone(), &pgp_key_store).await {
-            Ok(result) => println!("{} Mirroring done: {result}", now()),
-            Err(e) => println!("{} Mirroring failed: {e}", now())
+        let ctx = Context::build(mirror_opts, cli_opts.clone(), downloader.clone(), pgp_key_store.clone())?;
+        
+        match mirror::mirror(ctx).await {
+            Ok(result) => log(format!("Mirroring done: {result}")),
+            Err(e) => log(format!("Mirroring failed: {e}"))
         }
     }
 
@@ -59,9 +59,24 @@ struct CliOpts {
 
     #[arg(short, long, env, value_name = "FORCE",
         help = "Ignore current release file and package files and assume all metadata is stale")]
-    force: bool
+    force: bool,
+
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Parser, Clone)]
+#[command()]
+enum Command {
+    Mirror,
+    Verify,
+    Prune
 }
 
 fn now() -> String {
     chrono::Local::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+}
+
+fn log<M: Display>(msg: M) {
+    println!("{} Mirroring {msg}", now());
 }

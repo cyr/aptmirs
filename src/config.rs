@@ -134,9 +134,17 @@ impl PartialOrd for MirrorOpts {
 
 impl Display for MirrorOpts {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.packages && self.source {
+            f.write_str("deb+deb-src")?
+        } else if self.packages {
+            f.write_str("deb")?
+        } else if self.source {
+            f.write_str("deb-src")?
+        }
+
         f.write_fmt(
             format_args!(
-                "{} {}[{}] {}",
+                " {} {}[{}] {}",
                 self.url,
                 self.suite,
                 self.arch.join(", "),

@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, fs::File, io::{BufRead, BufReader}, str::FromStr};
+use std::{cmp::Ordering, fs::File, io::{BufRead, BufReader}};
 
 use compact_str::{CompactString, ToCompactString};
 
@@ -76,12 +76,12 @@ impl PartialOrd for SumFile {
     }
 }
 
-pub fn to_strongest_by_checksum(mut di_indices: Vec<FilePath>) -> Result<Vec<SumFile>> {
+pub fn to_strongest_by_checksum(di_indices: &mut Vec<FilePath>) -> Result<Vec<SumFile>> {
     di_indices.sort_by(|a, b| a.parent().cmp(&b.parent()));
     
     let mut sum_files = Vec::with_capacity(di_indices.len());
 
-    for file in di_indices.into_iter() {
+    while let Some(file) = di_indices.pop() {
         sum_files.push(SumFile::try_from(file)?);
     }
 
@@ -115,17 +115,12 @@ impl TryFrom<&str> for SumFileEntry {
     fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
         let mut split = value.split_whitespace();
 
-        let Some(checksum_str) = split.next() else {
-            return Err(MirsError::InvalidSumEntry { line: value.to_compact_string() } )
-        };
-
-        let Some(path_str) = split.next() else {
+        let (Some(checksum_str), Some(path_str)) = (split.next(), split.next()) else {
             return Err(MirsError::InvalidSumEntry { line: value.to_compact_string() } )
         };
 
         let checksum = Checksum::try_from(checksum_str)?;
-        let path = CompactString::from_str(path_str)
-            .expect("str should always convert into compactstring");
+        let path = CompactString::from(path_str);
 
         Ok(SumFileEntry {
             checksum,
@@ -158,6 +153,8 @@ impl Iterator for SumFileIterator {
     type Item = Result<SumFileEntry>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        self.buf.clear();
+
         let line = match self.reader.read_line(&mut self.buf) {
             Ok(0) => return None,
             Ok(size) => &self.buf[..size],
@@ -167,16 +164,12 @@ impl Iterator for SumFileIterator {
             }))
         };
 
-        match SumFileEntry::try_from(line) {
-            Ok(entry) => {
-                self.buf.clear();
-
-                Some(Ok(entry))
-            },
-            Err(e) => return Some(Err(MirsError::SumFileParsing { 
-                path: self.sum_file.path().clone(), 
-                inner: Box::new(e)
-            }))
-        }
+        Some(
+            SumFileEntry::try_from(line)
+                .map_err(|e| MirsError::SumFileParsing { 
+                    path: self.sum_file.path().clone(), 
+                    inner: Box::new(e)
+                })
+        )
     }
 }

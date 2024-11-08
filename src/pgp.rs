@@ -9,12 +9,26 @@ use walkdir::WalkDir;
 
 use crate::metadata::FilePath;
 use crate::error::{MirsError, Result};
+use crate::CliOpts;
 
+#[derive(Default)]
 pub struct PgpKeyStore {
     primary_fingerprints: BTreeMap<String, Arc<SignedPublicKey>>,
     primary_key_ids: BTreeMap<String, Arc<SignedPublicKey>>,
     sub_fingerprints: BTreeMap<String, Arc<SignedPublicSubKey>>,
     sub_key_ids: BTreeMap<String, Arc<SignedPublicSubKey>>,
+}
+
+impl TryFrom<&Arc<CliOpts>> for PgpKeyStore {
+    type Error = MirsError;
+
+    fn try_from(value: &Arc<CliOpts>) -> Result<Self> {
+        if let Some(key_path) = &value.pgp_key_path {
+            Ok(PgpKeyStore::build_from_path(key_path)?)
+        } else {
+            Ok(PgpKeyStore::default())
+        }
+    }
 }
 
 impl PgpKeyStore {

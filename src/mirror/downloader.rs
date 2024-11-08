@@ -31,15 +31,15 @@ impl Downloader {
         for _ in 0..num_threads {
             let task_receiver: Receiver<Box<Download>> = receiver.clone();
 
-            let mut task_progress = progress.clone();
+            let task_progress = progress.clone();
 
-            let mut task_http_client = http_client.clone();
+            let task_http_client = http_client.clone();
 
             let handle = tokio::spawn(async move {
                 while let Ok(dl) = task_receiver.recv().await {
                     let file_size = dl.size;
 
-                    match download_file(&mut task_http_client, dl, 
+                    match download_file(&task_http_client, dl, 
                         |downloaded| task_progress.bytes.inc_success(downloaded)
                     ).await {
                         Ok(downloaded) => {
@@ -73,7 +73,7 @@ impl Downloader {
         }
     }
 
-    pub async fn queue(&mut self, download_entry: Box<Download>) -> Result<()> {
+    pub async fn queue(&self, download_entry: Box<Download>) -> Result<()> {
         if let Some(size) = download_entry.size {
             self.progress.bytes.inc_total(size);
         }
@@ -85,8 +85,8 @@ impl Downloader {
         Ok(())
     }
 
-    pub async fn download(&mut self, download: Box<Download>) -> Result<()> {
-        match download_file(&mut self.http_client, download, |bytes| {
+    pub async fn download(&self, download: Box<Download>) -> Result<()> {
+        match download_file(&self.http_client, download, |bytes| {
             self.progress.bytes.inc_success(bytes)
         }).await {
             Ok(downloaded) => {
@@ -110,7 +110,7 @@ impl Downloader {
     }
 }
 
-async fn download_file<F>(http_client: &mut Client, download: Box<Download>, mut progress_cb: F) -> Result<bool>
+async fn download_file<F>(http_client: &Client, download: Box<Download>, mut progress_cb: F) -> Result<bool>
     where F: FnMut(u64) {
     
     let mut downloaded = false;

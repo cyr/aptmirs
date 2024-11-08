@@ -1,4 +1,4 @@
-use std::{path::Path, str::FromStr, sync::Arc};
+use std::{str::FromStr, sync::Arc};
 
 use compact_str::{format_compact, CompactString, ToCompactString};
 use pgp::{cleartext::CleartextSignedMessage, SignedPublicKey, StandaloneSignature};
@@ -9,11 +9,11 @@ use super::downloader::Download;
 use crate::{config::MirrorOpts, error::{MirsError, Result}, metadata::{checksum::Checksum, release::FileEntry, FilePath, IndexFileEntry}, pgp::{read_public_key, KeyStore}, CliOpts};
 
 pub struct Repository {
-    root_url: CompactString,
-    root_dir: FilePath,
-    dist_url: CompactString,
-    tmp_dir: FilePath,
-    pgp_pub_key: Option<SignedPublicKey>,
+    pub root_url: CompactString,
+    pub root_dir: FilePath,
+    pub dist_url: CompactString,
+    pub tmp_dir: FilePath,
+    pub pgp_pub_key: Option<SignedPublicKey>,
 }
 
 impl Repository {
@@ -27,7 +27,6 @@ impl Repository {
 
         let parsed_url = Url::parse(&root_url)
             .map_err(|_| MirsError::UrlParsing { url: root_url.clone() })?;
-
 
         let pgp_pub_key = if let Some(pgp_signing_key) = &mirror_opts.pgp_pub_key {
             let file = FilePath::from_str(pgp_signing_key.as_ref())?;
@@ -79,25 +78,6 @@ impl Repository {
         }
 
         Ok(())
-    }
-
-    pub async fn finalize(&self, paths_to_delete: Vec<FilePath>) -> Result<()> {
-        let tmp_dir = self.tmp_dir.clone();
-        let root_dir = self.root_dir.clone();
-
-        for path in paths_to_delete {
-            if tokio::fs::try_exists(&path).await? {
-                tokio::fs::remove_dir_all(&path).await?;
-            }
-        }
-
-        tokio::task::spawn_blocking(move || {
-            rebase_dir(tmp_dir.as_ref(), tmp_dir.as_ref(), root_dir.as_ref())?;
-            
-            std::fs::remove_dir_all(&tmp_dir)?;
-            
-            Ok(())
-        }).await?
     }
 
     pub fn rel_from_tmp<'a>(&self, path: &'a str) -> &'a str {
@@ -304,30 +284,4 @@ fn local_dir_from_archive_url(url: &Url, dir: &FilePath) -> Result<FilePath> {
     }
 
     Ok(base_dir)
-}
-
-fn rebase_dir(dir: &Path, from: &Path, to: &Path) -> Result<()> {
-    for entry in std::fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_dir() {
-            rebase_dir(&path, from, to)?;
-        } else {
-            let rel_path = path.strip_prefix(from)
-                .expect("implemention error; path should be in tmp");
-
-            let new_path = to.join(rel_path);
-
-            let parent = new_path.parent().unwrap();
-            if !parent.exists() {
-                std::fs::create_dir_all(parent)?;
-            }
-            
-            if std::fs::rename(&path, &new_path).is_err() {
-                std::fs::copy(&path, &new_path)?;
-            }
-        }
-    }
-
-    Ok(())
 }
