@@ -4,10 +4,9 @@ use compact_str::{format_compact, CompactString, ToCompactString};
 use pgp::{cleartext::CleartextSignedMessage, SignedPublicKey, StandaloneSignature};
 use reqwest::Url;
 
-use super::downloader::Download;
+use crate::{config::MirrorOpts, downloader::Download, error::{MirsError, Result}, metadata::{checksum::Checksum, release::FileEntry, FilePath, IndexFileEntry}, pgp::{read_public_key, KeyStore}, CliOpts};
 
-use crate::{config::MirrorOpts, error::{MirsError, Result}, metadata::{checksum::Checksum, release::FileEntry, FilePath, IndexFileEntry}, pgp::{read_public_key, KeyStore}, CliOpts};
-
+#[derive(Default)]
 pub struct Repository {
     pub root_url: CompactString,
     pub root_dir: FilePath,
@@ -18,7 +17,7 @@ pub struct Repository {
 
 impl Repository {
     pub fn build(mirror_opts: &MirrorOpts, cli_opts: &CliOpts) -> Result<Arc<Self>> {
-        let root_url = match &mirror_opts.url.as_str().strip_prefix('/') {
+        let root_url = match mirror_opts.url.as_str().strip_prefix('/') {
             Some(url) => url.to_compact_string(),
             None => mirror_opts.url.clone(),
         };
@@ -62,7 +61,7 @@ impl Repository {
     fn to_path_in_local_dir(&self, base: &FilePath, url: &str) -> FilePath {
         let relative_path = url
             .strip_prefix(self.root_url.as_str())
-            .expect("implementation error; download url should be in archive root: {base}, url: {url}");
+            .expect("implementation error; download url should be in archive root");
 
         let relative_path = match relative_path.strip_prefix('/') {
             Some(path) => path,
@@ -73,11 +72,12 @@ impl Repository {
     }
 
     pub fn delete_tmp(&self) -> Result<()> {
-        if let Err(e) = std::fs::remove_dir_all(&self.tmp_dir) {
-            return Err(e.into())
+        if !self.tmp_dir.exists() {
+            return Ok(())
         }
-
-        Ok(())
+        
+        std::fs::remove_dir_all(&self.tmp_dir)
+            .map_err(MirsError::from)
     }
 
     pub fn rel_from_tmp<'a>(&self, path: &'a str) -> &'a str {
@@ -102,7 +102,7 @@ impl Repository {
     }
 
     pub fn rebase_to_root<P: AsRef<str>>(&self, path: P) -> FilePath {
-        FilePath::from_str(&format_compact!("{}/{}", self.root_dir, path.as_ref())).expect("FilePath from str should always work")
+        FilePath(format_compact!("{}/{}", self.root_dir, path.as_ref()))
     }
 
     pub fn tmp_to_root<P: AsRef<str>>(&self, path: P) -> Option<FilePath> {
@@ -113,7 +113,7 @@ impl Repository {
     pub fn strip_tmp_base<P: AsRef<str>>(&self, path: P) -> Option<FilePath> {
         path.as_ref().strip_prefix(self.tmp_dir.as_str())
             .map(|v| v.strip_prefix('/').expect("Paths that strip tmp base should always start with / here"))
-            .map(|v| FilePath::from_str(v).expect("FilePath from str should always work"))
+            .map(FilePath::from)
     }
 
     pub fn create_file_download(&self, package: IndexFileEntry) -> Box<Download> {

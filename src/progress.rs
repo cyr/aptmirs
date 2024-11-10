@@ -4,7 +4,7 @@ use console::{style, pad_str};
 use indicatif::{ProgressBar, ProgressStyle, ProgressFinish, HumanBytes};
 use tokio::{sync::Mutex, time::sleep};
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Progress {
     pub step: Arc<AtomicU8>,
     step_name: Arc<Mutex<String>>,
@@ -142,7 +142,7 @@ impl Progress {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct ProgressPart {
     total: Arc<AtomicU64>,
     success: Arc<AtomicU64>,

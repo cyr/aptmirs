@@ -2,33 +2,35 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::{error::{MirsError, Result}, metadata::{checksum::Checksum, release::Release, FilePath}, mirror::{context::Context, downloader::Download, MirrorResult}, pgp::verify_release_signature};
+use crate::{context::Context, downloader::Download, error::{MirsError, Result}, log, metadata::{checksum::Checksum, release::Release, FilePath}, mirror::MirrorResult, pgp::verify_release_signature, step::{Step, StepResult}};
 
-use super::{Step, StepResult};
+use super::MirrorState;
 
 pub struct DownloadRelease;
 
 #[async_trait]
-impl Step for DownloadRelease {
+impl Step<MirrorState> for DownloadRelease {
+    type Result = MirrorResult;
+
     fn step_name(&self) -> &'static str {
         "Downloading release"
     }
     
-    fn error(&self, e: MirsError) -> MirsError {
-        MirsError::DownloadRelease { inner: Box::new(e) }
+    fn error(&self, e: MirsError) -> Self::Result {
+        MirrorResult::Error(MirsError::DownloadRelease { inner: Box::new(e) })
     }
 
-    async fn execute(&self, ctx: Arc<Context>) -> Result<StepResult> {
-        let mut output = ctx.output.lock().await;
+    async fn execute(&self, ctx: Arc<Context<MirrorState>>) -> Result<StepResult<Self::Result>> {
+        let mut state = ctx.state.lock().await;
+
+        let mut progress_bar = ctx.progress.create_download_progress_bar().await;
 
         let mut files = Vec::with_capacity(3);
 
         ctx.progress.files.inc_total(3);
 
-        let mut progress_bar = ctx.progress.create_download_progress_bar().await;
-
-        for file_url in ctx.repository.release_urls() {
-            let destination = ctx.repository.to_path_in_tmp(&file_url);
+        for file_url in state.repo.release_urls() {
+            let destination = state.repo.to_path_in_tmp(&file_url);
 
             let dl = Box::new(Download {
                 primary_target_path: destination.clone(),
@@ -39,12 +41,12 @@ impl Step for DownloadRelease {
                 always_download: true
             });
 
-            let download_res = ctx.downloader.download(dl).await;
+            let download_res = state.downloader.download(dl).await;
 
             ctx.progress.update_for_files(&mut progress_bar);
 
             if let Err(e) = download_res {
-                println!("{} {e}", crate::now());
+                log(e.to_string());
                 continue
             }
 
@@ -53,11 +55,11 @@ impl Step for DownloadRelease {
 
         progress_bar.finish_using_style();
 
-        if ctx.mirror_opts.pgp_verify {
-            if ctx.repository.has_specified_pgp_key() {
-                verify_release_signature(&files, ctx.repository.as_ref())?;
+        if state.opts.pgp_verify {
+            if state.repo.has_specified_pgp_key() {
+                verify_release_signature(&files, state.repo.as_ref())?;
             } else {
-                verify_release_signature(&files, ctx.pgp_key_store.as_ref())?;
+                verify_release_signature(&files, state.pgp_key_store.as_ref())?;
             }
         }
 
@@ -68,8 +70,8 @@ impl Step for DownloadRelease {
         // if the release file we already have has the same checksum as the one we downloaded, because
         // of how all metadata files are moved into the repository path after the mirroring operation
         // is completed successfully, there should be nothing more to do. save bandwidth, save lives!
-        let old_release = if let Some(local_release_file) = ctx.repository.tmp_to_root(release_file) {
-            if local_release_file.exists() && !ctx.cli_opts.force {
+        let old_release = if let Some(local_release_file) = state.repo.tmp_to_root(release_file) {
+            if !ctx.cli_opts.force && local_release_file.exists() {
                 let tmp_checksum = Checksum::checksum_file(&local_release_file).await?;
                 let local_checksum = Checksum::checksum_file(release_file).await?;
 
@@ -98,15 +100,15 @@ impl Step for DownloadRelease {
         if let Some(release_components) = release.components() {
             let components = release_components.split_ascii_whitespace().collect::<Vec<&str>>();
 
-            for requested_component in &ctx.mirror_opts.components {
+            for requested_component in &state.opts.components {
                 if !components.contains(&requested_component.as_str()) {
                     println!("{} WARNING: {requested_component} is not in this repo", crate::now());
                 }
             }
         }
 
-        output.total_bytes_downloaded += ctx.progress.bytes.success();
-        output.release = Some(release);
+        state.total_bytes_downloaded += ctx.progress.bytes.success();
+        state.release = Some(release);
 
         Ok(StepResult::Continue)
     }

@@ -1,9 +1,9 @@
 use std::{fmt::Display, sync::Arc};
 
 use clap::{command, arg, Parser};
+use cmd::Cmd;
 use config::read_config;
 use metadata::FilePath;
-use mirror::{context::Context, downloader::Downloader};
 use pgp::PgpKeyStore;
 
 use crate::error::Result;
@@ -13,26 +13,27 @@ mod error;
 mod metadata;
 mod config;
 mod pgp;
+mod prune;
+mod verify;
+mod step;
+mod context;
+mod downloader;
+mod progress;
+mod cmd;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli_opts = Arc::new(CliOpts::parse());
 
-    let opts = read_config(&cli_opts.config).await?;
+    let result = {
+        let opts = read_config(&cli_opts.config).await?;
+        let pgp_key_store = Arc::new(PgpKeyStore::try_from(&cli_opts)?);
+    
+        cli_opts.command().execute(opts, cli_opts, pgp_key_store).await
+    };
 
-    let downloader = Downloader::build(cli_opts.dl_threads);
-
-    let pgp_key_store = Arc::new(PgpKeyStore::try_from(&cli_opts)?);
-
-    for mirror_opts in opts {
-        log(format!("Mirroring {mirror_opts}"));
-
-        let ctx = Context::build(mirror_opts, cli_opts.clone(), downloader.clone(), pgp_key_store.clone())?;
-        
-        match mirror::mirror(ctx).await {
-            Ok(result) => log(format!("Mirroring done: {result}")),
-            Err(e) => log(format!("Mirroring failed: {e}"))
-        }
+    if let Err(e) = result {
+        println!("FATAL: {e}")
     }
 
     Ok(())
@@ -62,21 +63,20 @@ struct CliOpts {
     force: bool,
 
     #[command(subcommand)]
-    command: Option<Command>,
+    command: Option<Cmd>,
 }
 
-#[derive(Parser, Clone)]
-#[command()]
-enum Command {
-    Mirror,
-    Verify,
-    Prune
+impl CliOpts {
+    pub fn command(&self) -> Cmd {
+        self.command.unwrap_or_default()
+    }
 }
+
 
 fn now() -> String {
     chrono::Local::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }
 
 fn log<M: Display>(msg: M) {
-    println!("{} Mirroring {msg}", now());
+    println!("{} {msg}", now());
 }

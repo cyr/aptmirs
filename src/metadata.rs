@@ -13,8 +13,9 @@ pub mod sources_file;
 pub mod checksum;
 pub mod diff_index_file;
 pub mod sum_file;
+pub mod repository;
 
-#[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
+#[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord, Default)]
 pub struct FilePath(pub CompactString);
 
 impl FromStr for FilePath {
@@ -22,6 +23,12 @@ impl FromStr for FilePath {
 
     fn from_str(s: &str) -> std::prelude::v1::Result<Self, Self::Err> {
         Ok(FilePath(s.to_compact_string()))
+    }
+}
+
+impl From<&str> for FilePath {
+    fn from(value: &str) -> Self {
+        Self(CompactString::from(value))
     }
 }
 

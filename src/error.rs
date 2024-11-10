@@ -7,7 +7,7 @@ use reqwest::StatusCode;
 use thiserror::Error;
 use tokio::task::JoinError;
 
-use crate::{metadata::FilePath, mirror::downloader::Download};
+use crate::{downloader::Download, metadata::FilePath};
 
 pub type Result<T> = std::result::Result<T, MirsError>;
 

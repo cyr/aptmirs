@@ -18,6 +18,18 @@ pub struct Downloader {
     http_client: Client
 }
 
+impl Default for Downloader {
+    fn default() -> Self {
+        let (sender, _) = bounded(1);
+        Self {
+            sender,
+            _tasks: Default::default(),
+            progress: Default::default(),
+            http_client: Default::default()
+        }
+    }
+}
+
 impl Downloader {
     pub fn build(num_threads: u8) -> Self {
         let (sender, receiver) = bounded(1024);
