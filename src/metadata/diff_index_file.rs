@@ -1,41 +1,50 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, fs::File, io::BufRead, sync::{atomic::AtomicU64, Arc}};
 
 use compact_str::{CompactString, ToCompactString};
-use tokio::{fs::File, io::{AsyncBufReadExt, BufReader}};
 
 use crate::error::{MirsError, Result};
 
-use super::{checksum::Checksum, release::FileEntry, FilePath};
+use super::{checksum::Checksum, create_reader, release::FileEntry, FilePath, IndexFileEntry, IndexFileEntryIterator};
 
 pub struct DiffIndexFile {
-    pub files: BTreeMap<CompactString, FileEntry>
+    pub files: BTreeMap<CompactString, FileEntry>,
+    reader: Box<dyn BufRead + Send>,
+    path: FilePath,
+    buf: String,
+    size: u64,
+    read: Arc<AtomicU64>
 }
 
-impl DiffIndexFile {
-    pub async fn parse(path: &FilePath) -> Result<DiffIndexFile> {
-        let file = File::open(path).await?;
-        let file_size = file.metadata().await?.len();
+impl IndexFileEntryIterator for DiffIndexFile {
+    fn size(&self) -> u64 {
+        self.size
+    }
 
-        let mut files = BTreeMap::new();
+    fn counter(&self) -> Arc<AtomicU64> {
+        self.read.clone()
+    }
+    
+    fn path(&self) -> &FilePath {
+        &self.path
+    }
+}
 
-        let reader_capacity = file_size.min(1024*1024) as usize;
-        let buf_capacity = reader_capacity.min(1024*8*8);
-
-        let mut buf = String::with_capacity(buf_capacity);
-        let mut reader = BufReader::with_capacity(reader_capacity, file);   
-        
+impl Iterator for DiffIndexFile {
+    type Item = Result<IndexFileEntry>;
+    
+    fn next(&mut self) -> Option<Self::Item> {
         let mut in_download_scope = false;
 
         loop {
-            buf.clear();
+            self.buf.clear();
 
-            let len = match reader.read_line(&mut buf).await {
+            let len = match self.reader.read_line(&mut self.buf) {
                 Ok(0) => break,
                 Ok(n) => n,
-                Err(e) => return Err(e.into())
+                Err(e) => return Some(Err(e.into()))
             };
 
-            let line = (buf[..len]).trim_end();
+            let line = (self.buf[..len]).trim_end();
 
             match line {
                 _ if line.ends_with("Download:") => {
@@ -45,13 +54,15 @@ impl DiffIndexFile {
                     let mut split = line.split_ascii_whitespace();
 
                     let (Some(hash), Some(size), Some(path)) = (split.next(), split.next(), split.next()) else {
-                        return Err(MirsError::ParsingDiffIndex { path: path.to_owned() })
+                        return Some(Err(MirsError::ParsingDiffIndex { path: self.path.to_owned() }))
                     };
 
-                    let size = size.parse()?;
+                    let Ok(size) = size.parse() else {
+                        return Some(Err(MirsError::ParsingDiffIndex { path: self.path.to_owned() }))
+                    };
 
-                    if !files.contains_key(path) {
-                        files.insert(path.to_compact_string(), 
+                    if !self.files.contains_key(path) {
+                        self.files.insert(path.to_compact_string(), 
                             FileEntry { 
                                 size,
                                 md5: None,
@@ -62,9 +73,11 @@ impl DiffIndexFile {
                         );
                     }
 
-                    let entry = files.get_mut(path).unwrap();
+                    let entry = self.files.get_mut(path).unwrap();
 
-                    let checksum = Checksum::try_from(hash)?;
+                    let Ok(checksum) = Checksum::try_from(hash) else {
+                        return Some(Err(MirsError::ParsingDiffIndex { path: self.path.to_owned() }))
+                    };
 
                     match checksum {
                         Checksum::Md5(v) => entry.md5 = Some(v),
@@ -79,8 +92,30 @@ impl DiffIndexFile {
             }
         }
 
-        Ok(Self {
-            files
+        self.files.pop_first().map(|(path, value)| {
+            Ok(IndexFileEntry {
+                path,
+                size: Some(value.size),
+                checksum: value.strongest_hash(),
+            })
         })
+    }
+}
+
+impl DiffIndexFile {
+    pub fn build(path: &FilePath) -> Result<Box<dyn IndexFileEntryIterator>> {
+        let file = File::open(path)?;
+        let size = file.metadata()?.len();
+
+        let (reader, counter) = create_reader(file, path)?;
+
+        Ok(Box::new(Self {
+            files: BTreeMap::new(),
+            reader,
+            path: path.to_owned(),
+            buf: String::with_capacity(1024*8),
+            size,
+            read: counter,
+        }))
     }
 }

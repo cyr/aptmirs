@@ -5,7 +5,7 @@ use tokio::{fs::File, io::{BufReader, AsyncBufReadExt}};
 
 use crate::{error::{Result, MirsError}, config::MirrorOpts};
 
-use super::{checksum::Checksum, FilePath};
+use super::{checksum::Checksum, metadata_file::MetadataFile, FilePath};
 
 #[derive(Debug)]
 pub struct Release {
@@ -144,65 +144,6 @@ impl Release {
 
         self.files = filtered_files;
     }
-}
-
-pub enum MetadataFile {
-    Packages(CompactString),
-    Sources(CompactString),
-    DiffIndex(CompactString),
-    DebianInstallerSumFile(CompactString),
-    Other(CompactString)
-}
-
-impl AsRef<str> for MetadataFile {
-    fn as_ref(&self) -> &str {
-        match self {
-            MetadataFile::Packages(s) |
-            MetadataFile::Sources(s) |
-            MetadataFile::DiffIndex(s) |
-            MetadataFile::DebianInstallerSumFile(s) |
-            MetadataFile::Other(s) => s.as_ref()
-        }
-    }
-}
-
-impl From<CompactString> for MetadataFile {
-    fn from(value: CompactString) -> Self {
-        if is_packages_file(&value) {
-            MetadataFile::Packages(value)
-        } else if is_sources_file(&value) {
-            MetadataFile::Sources(value)
-        } else if is_diff_index_file(&value) {
-            MetadataFile::DiffIndex(value)
-        } else if is_debian_installer_file(&value) {
-            MetadataFile::DebianInstallerSumFile(value)
-        } else {
-            MetadataFile::Other(value)
-        }
-    }
-}
-
-fn is_packages_file(path: &str) -> bool {
-    path.ends_with("Packages") ||
-        path.ends_with("Packages.gz") || 
-        path.ends_with("Packages.xz") ||
-        path.ends_with("Packages.bz2")
-}
-
-fn is_diff_index_file(path: &str) -> bool {
-    path.ends_with("Index")
-}
-
-fn is_debian_installer_file(path: &str) -> bool {
-    path.contains("installer-") &&
-        path.ends_with("SUMS")
-}
-
-fn is_sources_file(path: &str) -> bool {
-    path.ends_with("Sources") || 
-        path.ends_with("Sources.gz") ||
-        path.ends_with("Sources.xz") ||
-        path.ends_with("Sources.bz2")
 }
 
 pub struct ReleaseFileIterator<'a> {

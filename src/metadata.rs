@@ -1,7 +1,9 @@
 use std::{fmt::Display, fs::Metadata, io::{BufRead, BufReader, Read}, path::Path, str::FromStr, sync::{atomic::{AtomicU64, Ordering}, Arc}};
 
 use compact_str::{format_compact, CompactString, ToCompactString};
-
+use diff_index_file::DiffIndexFile;
+use metadata_file::{is_debian_installer_sumfile, is_diff_index_file, is_packages_file, is_sources_file};
+use sum_file::SumFile;
 
 use crate::error::{Result, MirsError};
 
@@ -14,8 +16,9 @@ pub mod checksum;
 pub mod diff_index_file;
 pub mod sum_file;
 pub mod repository;
+pub mod metadata_file;
 
-#[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord, Default)]
+#[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord, Default, Hash)]
 pub struct FilePath(pub CompactString);
 
 impl FromStr for FilePath {
@@ -35,6 +38,12 @@ impl From<&str> for FilePath {
 impl From<&Path> for FilePath {
     fn from(value: &Path) -> Self {
         Self(value.as_os_str().to_str().expect("file paths should be utf8").to_compact_string())
+    }
+}
+
+impl AsRef<FilePath> for FilePath {
+    fn as_ref(&self) -> &FilePath {
+        self
     }
 }
 
@@ -96,9 +105,7 @@ impl FilePath {
     }
 
     pub fn parent(&self) -> Option<&str> {
-        let Some(split_iter) = &self.0.rsplit_once('/') else {
-            return None
-        };
+        let split_iter = self.0.rsplit_once('/')?;
         
         Some(split_iter.0)
     }
@@ -119,42 +126,59 @@ impl FilePath {
             }
         };
 
+        if first.is_empty() {
+            return FilePath::from(other)
+        }
+
         FilePath(format_compact!("{first}/{other}"))
     }
 }
 
-pub enum IndexSource {
-    Packages(FilePath),
-    Sources(FilePath)
+pub enum IndexSource<T> {
+    Packages(T),
+    Sources(T),
+    DebianInstallerSumFile(T),
+    DiffIndex(T),
 }
 
-impl IndexSource {
+impl<T: AsRef<FilePath>> IndexSource<T> {
     pub fn into_reader(self) -> Result<Box<dyn IndexFileEntryIterator>> {
         match self {
-            IndexSource::Packages(path) => PackagesFile::build(&path),
-            IndexSource::Sources(path) => SourcesFile::build(&path),
+            IndexSource::Packages(path) => PackagesFile::build(path.as_ref()),
+            IndexSource::Sources(path) => SourcesFile::build(path.as_ref()),
+            IndexSource::DebianInstallerSumFile(path) => DiffIndexFile::build(path.as_ref()),
+            IndexSource::DiffIndex(path) => SumFile::build(path.as_ref()),
         }
     }
 }
 
-impl From<FilePath> for IndexSource {
-    fn from(value: FilePath) -> Self {
-        match value.file_name() {
-            v if v.starts_with("Packages") => IndexSource::Packages(value),
-            v if v.starts_with("Sources") => IndexSource::Sources(value),
-            _ => unreachable!("implementation error; non-index file as IndexSource")
+impl<T: AsRef<FilePath>> From<T> for IndexSource<T> {
+    fn from(value: T) -> Self {
+        let file = value.as_ref();
+
+        if is_packages_file(file) {
+            return IndexSource::Packages(value)
+        } else if is_sources_file(file) {
+            return IndexSource::Sources(value)
+        } else if is_debian_installer_sumfile(file) {
+            return IndexSource::DebianInstallerSumFile(value)
+        } else if is_diff_index_file(file) {
+            return IndexSource::DiffIndex(value)
         }
+
+        panic!("implementation error; non-index file as IndexSource")
     }
 }
 
 pub trait IndexFileEntryIterator : Iterator<Item = Result<IndexFileEntry>> + Send {
     fn size(&self) -> u64;
     fn counter(&self) -> Arc<AtomicU64>;
+    fn path(&self) -> &FilePath;
 }
 
 pub struct IndexFileEntry {
     pub path: CompactString,
-    pub size: u64,
+    pub size: Option<u64>,
     pub checksum: Option<Checksum>
 }
 pub struct TrackingReader<R: Read> {

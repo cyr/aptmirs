@@ -46,6 +46,10 @@ impl IndexFileEntryIterator for SourcesFile {
     fn counter(&self) -> Arc<AtomicU64> {
         self.read.clone()
     }
+    
+    fn path(&self) -> &FilePath {
+        &self.path
+    }
 }
 
 impl Iterator for SourcesFile {
@@ -136,7 +140,7 @@ impl Iterator for SourcesFile {
         if let Some((path, entry)) = self.files_buf.pop_first() {
             return Some(Ok(IndexFileEntry {
                 path,
-                size: entry.size,
+                size: Some(entry.size),
                 checksum: Some(entry.checksum)
             }))
         }

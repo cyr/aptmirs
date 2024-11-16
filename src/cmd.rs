@@ -4,12 +4,14 @@ use async_trait::async_trait;
 use clap::{command, Parser};
 
 use crate::context::Context;
-use crate::downloader::Downloader;
 use crate::log;
-use crate::metadata::repository::Repository;
-use crate::{mirror::{debian_installer::DownloadDebianInstaller, diffs::DownloadFromDiffs, metadata::DownloadMetadata, packages::DownloadFromPackageIndices, release::DownloadRelease, MirrorResult, MirrorState}, step::{Step, StepResult}};
+use crate::{mirror::MirrorState, step::{Step, StepResult}};
 use crate::{config::MirrorOpts, pgp::PgpKeyStore, CliOpts};
 use crate::error::Result;
+
+pub type DynStep<T, R> = Box<dyn Step<T, Result = R>>;
+pub type ArcContext<T> = Arc<Context<T>>;
+pub type ContextWithSteps<T, R> = (ArcContext<T>, Vec<DynStep<T, R>>);
 
 #[derive(Parser, Clone, Copy, Default)]
 #[command()]
@@ -37,45 +39,8 @@ impl Cmd {
     pub async fn execute(self, opts: Vec<MirrorOpts>, cli_opts: Arc<CliOpts>, pgp_key_store: Arc<PgpKeyStore>) -> Result<()> {
         match self {
             Cmd::Mirror => {
-                let downloader = Downloader::build(cli_opts.dl_threads);
-
-                let ctxs = opts.into_iter()
-                    .map(|o| {
-                        let repo = Repository::build(&o, &cli_opts)?;
-
-                        let mut steps: Vec<Box<dyn Step<MirrorState, Result = MirrorResult>>> = vec![
-                            Box::new(DownloadRelease),
-                            Box::new(DownloadMetadata),
-                            Box::new(DownloadFromDiffs),
-                            Box::new(DownloadFromPackageIndices),
-                        ];
-
-                        if o.debian_installer() {
-                            steps.push(Box::new(DownloadDebianInstaller))
-                        }
-
-                        let progress = downloader.progress();
-
-                        let state = MirrorState {
-                            repo,
-                            opts: Arc::new(o),
-                            downloader: downloader.clone(),
-                            pgp_key_store: pgp_key_store.clone(),
-                            ..Default::default()
-                        };
-
-                        Ok((Context::build(state, cli_opts.clone(), progress)?, steps))
-                    })
-                    .collect::<Result<Vec<(_, _)>>>()?;
-
-                for (ctx, steps) in ctxs {
-                    {
-                        let state = ctx.state.lock().await;
-                        log(format!("{self} {state}"));
-                    }
-                    let result = self.run(ctx, steps).await;
-                    log(result.to_string());
-                }
+                let ctxs = Context::<MirrorState>::create(opts, cli_opts, pgp_key_store)?;
+                self.run_all(ctxs).await;
             },
             Cmd::Verify => todo!(),
             Cmd::Prune => todo!(),
@@ -84,7 +49,7 @@ impl Cmd {
         Ok(())
     }
 
-    async fn run<T: CmdState<Result = R>, R: CmdResult>(self, ctx: Arc<Context<T>>, steps: Vec<Box<dyn Step<T, Result = R>>>) -> R {
+    async fn run<T: CmdState<Result = R>, R: CmdResult>(self, ctx: ArcContext<T>, steps: Vec<DynStep<T, R>>) -> R {
         ctx.progress.reset();
 
         ctx.progress.set_total_steps(steps.len() as u8);
@@ -96,16 +61,24 @@ impl Cmd {
                 Ok(result) => match result {
                     StepResult::Continue => (),
                     StepResult::End(result) => {
-                        return ctx.state.lock().await.finalize_with_result(result).await
+                        return ctx.state.finalize_with_result(result).await
                     },
                 }
                 Err(e) => {
-                    return ctx.state.lock().await.finalize_with_result(step.error(e)).await
+                    return ctx.state.finalize_with_result(step.error(e)).await
                 },
             }
         }
     
-        ctx.state.lock().await.finalize().await
+        ctx.state.finalize().await
+    }
+
+    async fn run_all<T: CmdState<Result = R>, R: CmdResult>(self, ctxs: Vec<ContextWithSteps<T, R>>) {
+        for (ctx, steps) in ctxs {
+            log(format!("{self} {}", ctx.state));
+            let result = self.run(ctx, steps).await;
+            log(result.to_string());
+        }
     }
 }
 

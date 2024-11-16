@@ -1,6 +1,6 @@
-use std::{fs::File, io::BufRead, sync::{atomic::AtomicU64, Arc}};
+use std::{collections::BTreeMap, fs::File, io::BufRead, sync::{atomic::AtomicU64, Arc}};
 
-use compact_str::ToCompactString;
+use compact_str::{format_compact, ToCompactString};
 
 use crate::error::{Result, MirsError};
 
@@ -38,6 +38,10 @@ impl IndexFileEntryIterator for PackagesFile {
 
     fn counter(&self) -> Arc<AtomicU64> {
         self.read.clone()
+    }
+    
+    fn path(&self) -> &FilePath {
+        &self.path
     }
 }
 
@@ -111,11 +115,45 @@ impl Iterator for PackagesFile {
         if let (Some(path), Some(size), checksum) = (path, size, hash) {
             Some(Ok(IndexFileEntry {
                 path,
-                size, 
+                size: Some(size), 
                 checksum
             }))
         } else {
             None
         }
     }
+}
+
+pub fn into_filtered_by_extension<T: AsRef<FilePath>>(list: &mut Vec<T>) -> Vec<T> {
+    let mut existing_indices = BTreeMap::<FilePath, T>::new();
+
+    while let Some(index_file_path) = list.pop() {
+        let file_path = index_file_path.as_ref();
+
+        let file_stem = file_path.file_stem();
+        let path_with_stem = FilePath(format_compact!(
+            "{}/{}", 
+            file_path.parent().unwrap(), 
+            file_stem
+        ));
+
+        if let Some(val) = existing_indices.get_mut(&path_with_stem) {
+            let file_path = val.as_ref();
+            if is_extension_preferred(file_path.extension(), file_path.extension()) {
+                *val = index_file_path
+            }
+        } else {
+            existing_indices.insert(path_with_stem, index_file_path);
+        }
+    }
+    
+    existing_indices.into_values().collect()
+}
+
+fn is_extension_preferred(old: Option<&str>, new: Option<&str>) -> bool {
+    matches!((old, new),
+        (_, Some("gz")) |
+        (_, Some("xz")) |
+        (_, Some("bz2")) 
+    )
 }

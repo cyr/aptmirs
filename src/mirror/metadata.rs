@@ -3,10 +3,10 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use compact_str::format_compact;
 
-use crate::{context::Context, error::MirsError, metadata::{release::MetadataFile, FilePath}, mirror::MirrorResult, step::{Step, StepResult}};
+use crate::{context::Context, error::MirsError, metadata::{metadata_file::{deduplicate_metadata, MetadataFile}, FilePath}, mirror::MirrorResult, step::{Step, StepResult}};
 use crate::error::Result;
 
-use super::MirrorState;
+use super::{verify_and_prune, MirrorState};
 
 pub struct DownloadMetadata;
 
@@ -23,9 +23,9 @@ impl Step<MirrorState> for DownloadMetadata {
     }
 
     async fn execute(&self, ctx: Arc<Context<MirrorState>>) -> Result<StepResult<Self::Result>> {
-        let mut state = ctx.state.lock().await;
+        let mut output = ctx.state.output.lock().await;
 
-        let Some(release) = state.release.take() else {
+        let Some(release) = output.release.take() else {
             return Err(MirsError::NoReleaseFile)
         };
 
@@ -33,26 +33,26 @@ impl Step<MirrorState> for DownloadMetadata {
 
         let by_hash = release.acquire_by_hash();
 
-        for (path, file_entry) in release.into_filtered_files(&state.opts.clone()) {
+        let mut metadata = Vec::new();
+
+        for (mut file, file_entry) in release.into_filtered_files(&ctx.state.opts.clone()) {
             let mut add_by_hash = by_hash;
-            let url = state.repo.to_url_in_dist(path.as_ref());
+            let url = ctx.state.repo.to_url_in_dist(file.as_ref());
 
-            let file_path_in_tmp = state.repo.to_path_in_tmp(&url);
+            let file_path_in_tmp = ctx.state.repo.to_path_in_tmp(&url);
 
-            let file_path_in_root = state.repo.to_path_in_root(&url);
+            let file_path_in_root = ctx.state.repo.to_path_in_root(&url);
             
             // since all files have their checksums verified on download, any file that is local can
             // presumably be trusted to be correct. and since we only move in the metadata files on 
             // a successful mirror operation, if we see the metadata file and its hash file, there is
             // no need to queue its content.
             if let Some(checksum) = file_entry.strongest_hash() {
-                let by_hash_base = file_path_in_root
-                    .parent()
-                    .expect("all files need a parent(?)");
+                let by_hash_base = file_path_in_root.parent().unwrap_or("");
 
                 let checksum_path = FilePath(format_compact!("{by_hash_base}/{}", checksum.relative_path()));
 
-                if let MetadataFile::DebianInstallerSumFile(_) = path {
+                if let MetadataFile::DebianInstallerSumFile(..) = &file {
                     if file_path_in_root.exists() && !ctx.cli_opts.force {
                         continue
                     }
@@ -61,32 +61,28 @@ impl Step<MirrorState> for DownloadMetadata {
                 }
             }
 
-            match path {
-                MetadataFile::Packages(..) |
-                MetadataFile::Sources(..) => {
-                    state.package_indices.push(file_path_in_tmp.clone());
-                },
-                MetadataFile::DiffIndex(..) =>{
-                    state.diff_indices.push(file_path_in_tmp.clone());
-                },
-                MetadataFile::DebianInstallerSumFile(..) => {
-                    state.di_sumfiles.push(file_path_in_tmp.clone());
+            if file.is_index() {
+                if let MetadataFile::DebianInstallerSumFile(..) = &file {
                     add_by_hash = false;
-                },
-                MetadataFile::Other(..) => ()
+                }
+
+                *file.path_mut() = file_path_in_tmp.clone();
+                metadata.push(file);
             }
 
-            let download = state.repo.create_metadata_download(url, file_path_in_tmp, file_entry, add_by_hash)?;
-            state.downloader.queue(download).await?;
+            let download = ctx.state.repo.create_metadata_download(url, file_path_in_tmp, file_entry, add_by_hash)?;
+            ctx.state.downloader.queue(download).await?;
         }
 
         ctx.progress.wait_for_completion(&mut progress_bar).await;
 
-        state.verify_and_prune();
+        verify_and_prune(&mut metadata);
 
-        state.total_bytes_downloaded += ctx.progress.bytes.success();
+        output.indices = deduplicate_metadata(metadata);
 
-        if state.is_empty() {
+        output.total_bytes_downloaded += ctx.progress.bytes.success();
+
+        if output.is_empty() {
             return Ok(StepResult::End(MirrorResult::IrrelevantChanges))
         }
         

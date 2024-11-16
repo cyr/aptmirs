@@ -122,7 +122,7 @@ impl Repository {
 
         Box::new(Download {
             url,
-            size: Some(package.size),
+            size: package.size,
             checksum: package.checksum,
             primary_target_path,
             symlink_paths: Vec::new(),
@@ -150,10 +150,7 @@ impl Repository {
         let mut symlink_paths = Vec::new();
         let primary_target_path = if by_hash {
             let by_hash_base = FilePath(
-                file_path
-                    .parent()
-                    .expect("all files needs a parent(?)")
-                    .to_compact_string()
+                file_path.parent().unwrap_or("").to_compact_string()
             );
 
             symlink_paths.push(file_path);

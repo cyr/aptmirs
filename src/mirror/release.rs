@@ -21,7 +21,7 @@ impl Step<MirrorState> for DownloadRelease {
     }
 
     async fn execute(&self, ctx: Arc<Context<MirrorState>>) -> Result<StepResult<Self::Result>> {
-        let mut state = ctx.state.lock().await;
+        let mut output = ctx.state.output.lock().await;
 
         let mut progress_bar = ctx.progress.create_download_progress_bar().await;
 
@@ -29,8 +29,8 @@ impl Step<MirrorState> for DownloadRelease {
 
         ctx.progress.files.inc_total(3);
 
-        for file_url in state.repo.release_urls() {
-            let destination = state.repo.to_path_in_tmp(&file_url);
+        for file_url in ctx.state.repo.release_urls() {
+            let destination = ctx.state.repo.to_path_in_tmp(&file_url);
 
             let dl = Box::new(Download {
                 primary_target_path: destination.clone(),
@@ -41,7 +41,7 @@ impl Step<MirrorState> for DownloadRelease {
                 always_download: true
             });
 
-            let download_res = state.downloader.download(dl).await;
+            let download_res = ctx.state.downloader.download(dl).await;
 
             ctx.progress.update_for_files(&mut progress_bar);
 
@@ -55,11 +55,11 @@ impl Step<MirrorState> for DownloadRelease {
 
         progress_bar.finish_using_style();
 
-        if state.opts.pgp_verify {
-            if state.repo.has_specified_pgp_key() {
-                verify_release_signature(&files, state.repo.as_ref())?;
+        if ctx.state.opts.pgp_verify {
+            if ctx.state.repo.has_specified_pgp_key() {
+                verify_release_signature(&files, ctx.state.repo.as_ref())?;
             } else {
-                verify_release_signature(&files, state.pgp_key_store.as_ref())?;
+                verify_release_signature(&files, ctx.state.pgp_key_store.as_ref())?;
             }
         }
 
@@ -70,7 +70,7 @@ impl Step<MirrorState> for DownloadRelease {
         // if the release file we already have has the same checksum as the one we downloaded, because
         // of how all metadata files are moved into the repository path after the mirroring operation
         // is completed successfully, there should be nothing more to do. save bandwidth, save lives!
-        let old_release = if let Some(local_release_file) = state.repo.tmp_to_root(release_file) {
+        let old_release = if let Some(local_release_file) = ctx.state.repo.tmp_to_root(release_file) {
             if !ctx.cli_opts.force && local_release_file.exists() {
                 let tmp_checksum = Checksum::checksum_file(&local_release_file).await?;
                 let local_checksum = Checksum::checksum_file(release_file).await?;
@@ -100,15 +100,15 @@ impl Step<MirrorState> for DownloadRelease {
         if let Some(release_components) = release.components() {
             let components = release_components.split_ascii_whitespace().collect::<Vec<&str>>();
 
-            for requested_component in &state.opts.components {
+            for requested_component in &ctx.state.opts.components {
                 if !components.contains(&requested_component.as_str()) {
                     println!("{} WARNING: {requested_component} is not in this repo", crate::now());
                 }
             }
         }
 
-        state.total_bytes_downloaded += ctx.progress.bytes.success();
-        state.release = Some(release);
+        output.total_bytes_downloaded += ctx.progress.bytes.success();
+        output.release = Some(release);
 
         Ok(StepResult::Continue)
     }

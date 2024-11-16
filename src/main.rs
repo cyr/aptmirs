@@ -72,7 +72,6 @@ impl CliOpts {
     }
 }
 
-
 fn now() -> String {
     chrono::Local::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }

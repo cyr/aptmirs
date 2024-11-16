@@ -1,11 +1,16 @@
 use std::{fmt::Display, path::Path, sync::Arc};
 
 use async_trait::async_trait;
+use debian_installer::DownloadDebianInstaller;
+use diffs::DownloadFromDiffs;
 use indicatif::HumanBytes;
+use metadata::DownloadMetadata;
+use packages::DownloadFromPackageIndices;
+use release::DownloadRelease;
 use thiserror::Error;
-use tokio::task::spawn_blocking;
+use tokio::{sync::Mutex, task::spawn_blocking};
 
-use crate::{cmd::{CmdResult, CmdState}, config::MirrorOpts, downloader::Downloader, error::MirsError, metadata::{release::Release, repository::Repository, FilePath}, pgp::PgpKeyStore};
+use crate::{cmd::{CmdResult, CmdState}, config::MirrorOpts, context::Context, downloader::Downloader, error::MirsError, metadata::{metadata_file::MetadataFile, release::Release, repository::Repository, FilePath}, pgp::PgpKeyStore, step::Step, CliOpts};
 use crate::error::Result;
 
 pub mod release;
@@ -13,6 +18,9 @@ pub mod metadata;
 pub mod diffs;
 pub mod packages;
 pub mod debian_installer;
+
+pub type MirrorDynStep = Box<dyn Step<MirrorState, Result = MirrorResult>>;
+pub type MirrorContext = Arc<Context<MirrorState>>;
 
 #[derive(Error, Debug)]
 pub enum MirrorResult {
@@ -30,37 +38,50 @@ impl CmdResult for MirrorResult { }
 
 #[derive(Default)]
 pub struct MirrorState {
-    pub release: Option<Release>,
-    pub package_indices: Vec<FilePath>,
-    pub diff_indices: Vec<FilePath>,
-    pub di_sumfiles: Vec<FilePath>,
-    pub delete_paths: Vec<FilePath>,
-    pub total_bytes_downloaded: u64,
-    pub total_packages_downloaded: u64,
     pub repo: Arc<Repository>,
     pub opts: Arc<MirrorOpts>,
     pub downloader: Downloader,
     pub pgp_key_store: Arc<PgpKeyStore>,
+    pub output: Arc<Mutex<MirrorOutput>>
+}
+
+#[derive(Default)]
+pub struct MirrorOutput {
+    pub release: Option<Release>,
+    pub indices: Vec<MetadataFile>,
+    pub delete_paths: Vec<FilePath>,
+    pub total_bytes_downloaded: u64,
+    pub total_packages_downloaded: u64,
+} 
+
+impl MirrorOutput {
+    pub fn is_empty(&self) -> bool {
+        self.indices.is_empty()
+    }
+
+    pub fn take_metadata<F: Fn(&MetadataFile) -> bool>(&mut self, filter_func: F) -> Vec<MetadataFile> {
+        let mut vec = Vec::new();
+
+        for i in (0..self.indices.len()).rev() {
+            if filter_func(&self.indices[i]) {
+                let file = self.indices.swap_remove(i);
+
+                vec.push(file);
+            }
+        }
+
+        vec
+    }
 }
 
 impl MirrorState {
-    pub fn is_empty(&self) -> bool {
-        self.package_indices.is_empty() &&
-            self.diff_indices.is_empty() &&
-            self.di_sumfiles.is_empty()
-    }
-    
-    pub fn verify_and_prune(&mut self) {
-        verify_and_prune(&mut self.package_indices);
-        verify_and_prune(&mut self.diff_indices);
-        verify_and_prune(&mut self.di_sumfiles);
-    }
-    
     async fn move_metadata_into_root(&self) -> Result<MirrorResult> {
+        let output = self.output.lock().await;
+
         let tmp_dir = self.repo.tmp_dir.clone();
         let root_dir = self.repo.root_dir.clone();
 
-        for path in &self.delete_paths {
+        for path in &output.delete_paths {
             if tokio::fs::try_exists(path).await? {
                 tokio::fs::remove_dir_all(path).await?;
             }
@@ -75,8 +96,8 @@ impl MirrorState {
         }).await??;
 
         Ok(MirrorResult::NewRelease { 
-            total_download_size: self.total_bytes_downloaded,
-            num_packages_downloaded: self.total_packages_downloaded
+            total_download_size: output.total_bytes_downloaded,
+            num_packages_downloaded: output.total_packages_downloaded
         })
     }
 }
@@ -106,9 +127,13 @@ impl CmdState for MirrorState {
     type Result = MirrorResult;
 
     async fn finalize(&self) -> Self::Result {
-        let result = MirrorResult::NewRelease {
-            total_download_size: self.total_bytes_downloaded,
-            num_packages_downloaded: self.total_packages_downloaded
+        let result = {
+            let output = self.output.lock().await;
+            
+            MirrorResult::NewRelease {
+                total_download_size: output.total_bytes_downloaded,
+                num_packages_downloaded: output.total_packages_downloaded
+            }
         };
 
         self.finalize_with_result(result).await
@@ -132,7 +157,48 @@ impl CmdState for MirrorState {
     }
 }
 
-fn verify_and_prune(files: &mut Vec<FilePath>) {
+impl Context<MirrorState> {
+    fn create_steps(opts: &MirrorOpts) -> Vec<MirrorDynStep> {
+        let mut steps: Vec<MirrorDynStep> = vec![
+            Box::new(DownloadRelease),
+            Box::new(DownloadMetadata),
+            Box::new(DownloadFromDiffs),
+            Box::new(DownloadFromPackageIndices),
+        ];
+
+        if opts.debian_installer() {
+            steps.push(Box::new(DownloadDebianInstaller))
+        }
+
+        steps
+    }
+
+    pub fn create(opts: Vec<MirrorOpts>, cli_opts: Arc<CliOpts>, pgp_key_store: Arc<PgpKeyStore>) -> Result<Vec<(MirrorContext, Vec<MirrorDynStep>)>> {
+        let downloader = Downloader::build(cli_opts.dl_threads);
+
+        opts.into_iter()
+            .map(|o| {
+                let repo = Repository::build(&o, &cli_opts)?;
+
+                let steps = Self::create_steps(&o);
+
+                let progress = downloader.progress();
+
+                let state = MirrorState {
+                    repo,
+                    opts: Arc::new(o),
+                    downloader: downloader.clone(),
+                    pgp_key_store: pgp_key_store.clone(),
+                    ..Default::default()
+                };
+
+                Ok((Context::build(state, cli_opts.clone(), progress), steps))
+            })
+            .collect::<Result<Vec<(_, _)>>>()
+    }
+}
+
+pub fn verify_and_prune(files: &mut Vec<MetadataFile>) {
     let mut pos = 0;
     loop {
         if pos >= files.len() {

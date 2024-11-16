@@ -142,7 +142,7 @@ impl Progress {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct ProgressPart {
     total: Arc<AtomicU64>,
     success: Arc<AtomicU64>,
