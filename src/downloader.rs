@@ -54,13 +54,8 @@ impl Downloader {
                     match download_file(&task_http_client, dl, 
                         |downloaded| task_progress.bytes.inc_success(downloaded)
                     ).await {
-                        Ok(downloaded) => {
-                            if downloaded {
-                                task_progress.files.inc_success(1)
-                            } else {
-                                task_progress.files.inc_skipped(1)
-                            }
-                        } ,
+                        Ok(true) => task_progress.files.inc_success(1),
+                        Ok(false) => task_progress.files.inc_skipped(1),
                         Err(e) => {
                             if let MirsError::Download { .. } = e {
                                 if let Some(size) = file_size {

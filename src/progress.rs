@@ -1,5 +1,6 @@
 use std::{sync::{Arc, atomic::{AtomicU64, Ordering, AtomicU8}}, time::Duration};
 
+use compact_str::ToCompactString;
 use console::{style, pad_str};
 use indicatif::{ProgressBar, ProgressStyle, ProgressFinish, HumanBytes};
 use tokio::{sync::Mutex, time::sleep};
@@ -96,16 +97,39 @@ impl Progress {
             .with_prefix(prefix)
     }
 
+    pub async fn create_count_progress_bar(&self) -> ProgressBar {
+        let prefix = self.create_prefix().await;
+
+        ProgressBar::new(self.files.total())
+            .with_style(
+                ProgressStyle::default_bar()
+                    .template(
+                        "{prefix} [{wide_bar:.cyan/dim}] [{elapsed_precise}] [{msg}]",
+                    )
+                    .expect("template string should follow the syntax")
+                    .progress_chars("###"),
+                    
+            )
+            .with_finish(ProgressFinish::AndLeave)
+            .with_prefix(prefix)
+    }
+
+    pub fn update_for_count(&self, progress_bar: &mut ProgressBar) {
+        progress_bar.set_length(self.bytes.total());
+        progress_bar.set_position(self.bytes.success());
+        progress_bar.set_message(self.files.success().to_compact_string());
+    }
+
     pub fn update_for_files(&self, progress_bar: &mut ProgressBar) {
         progress_bar.set_length(self.files.total());
         progress_bar.set_position(self.files.success());
-        progress_bar.set_message(HumanBytes(self.bytes.success()).to_string());
+        progress_bar.set_message(HumanBytes(self.bytes.success()).to_compact_string());
     }
 
     pub fn update_for_bytes(&self, progress_bar: &mut ProgressBar) {
         progress_bar.set_length(self.bytes.total());
         progress_bar.set_position(self.bytes.success());
-        progress_bar.set_message(HumanBytes(self.bytes.success()).to_string());
+        progress_bar.set_message(HumanBytes(self.bytes.success()).to_compact_string());
     }
 
     pub fn reset(&self) {

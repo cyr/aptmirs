@@ -80,7 +80,7 @@ impl MetadataFile {
             MetadataFile::Sources(..) => SourcesFile::build(self),
             MetadataFile::DiffIndex(..) => DiffIndexFile::build(self),
             MetadataFile::DebianInstallerSumFile(..) => SumFile::build(self),
-            MetadataFile::Other(file_path) => return Err(MirsError::NonIndexFileBuild { path: file_path.to_owned() } ),
+            MetadataFile::Other(file_path) => Err(MirsError::NonIndexFileBuild { path: file_path.to_owned() } ),
         }
     }
 }

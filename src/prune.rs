@@ -1,19 +1,26 @@
-use std::{fmt::Display, sync::Arc};
+use std::{collections::BTreeMap, fmt::Display, sync::Arc};
 
 use ahash::HashSet;
 use async_trait::async_trait;
+use compact_str::CompactString;
 use indicatif::HumanBytes;
+use inventory::Inventory;
 use thiserror::Error;
 use tokio::sync::Mutex;
 
-use crate::{cmd::{CmdResult, CmdState}, config::MirrorOpts, error::MirsError, metadata::{repository::Repository, FilePath}};
+use crate::{cmd::{CmdResult, CmdState}, config::MirrorOpts, context::Context, error::MirsError, metadata::{repository::Repository, FilePath}, progress::Progress, step::Step, CliOpts};
+use crate::error::Result;
 
 mod inventory;
+mod delete;
+
+pub type PruneDynStep = Box<dyn Step<PruneState, Result = PruneResult>>;
+pub type PruneContext = Arc<Context<PruneState>>;
 
 #[derive(Error, Debug)]
 pub enum PruneResult { 
-    #[error("Ok: pruned {total_files} files, total: {}", HumanBytes(*.total_bytes))]
-    Pruned { total_files: u64, total_bytes: u64 },
+    #[error("Ok: valid files found: {valid_files}, pruned {total_files} files, total: {}", HumanBytes(*.total_bytes))]
+    Pruned { valid_files: u64, total_files: u64, total_bytes: u64 },
     #[error("Fail: {0}")]
     Error(MirsError)
 }
@@ -21,7 +28,7 @@ pub enum PruneResult {
 impl CmdResult for PruneResult { }
 
 pub struct PruneState {
-    pub mirrors: Vec<(MirrorOpts, Repository)>,
+    pub mirrors: Vec<(MirrorOpts, Arc<Repository>)>,
     pub output: Arc<Mutex<PruneOutput>>,
 }
 
@@ -49,8 +56,10 @@ impl Display for PruneState {
     }
 }
 
+#[derive(Default)]
 pub struct PruneOutput {
     pub files: HashSet<FilePath>, 
+    pub total_valid_files: u64,
     pub total_files_deleted: u64,
     pub total_bytes_deleted: u64,
 }
@@ -62,10 +71,45 @@ impl CmdState for PruneState {
     async fn finalize(&self) -> Self::Result {
         let output = self.output.lock().await;
 
-        PruneResult::Pruned { total_files: output.total_files_deleted, total_bytes: output.total_bytes_deleted }
+        PruneResult::Pruned {
+            valid_files: output.total_valid_files,
+            total_files: output.total_files_deleted,
+            total_bytes: output.total_bytes_deleted
+        }
     }
 
     async fn finalize_with_result(&self, result: Self::Result) -> Self::Result {
         result
+    }
+}
+
+impl Context<PruneState> {
+    fn create_steps() -> Vec<PruneDynStep> {
+        vec![
+            Box::new(Inventory),
+        ]
+    }
+
+    pub fn create(opts: Vec<MirrorOpts>, cli_opts: Arc<CliOpts>) -> Result<Vec<(PruneContext, Vec<PruneDynStep>)>> {
+        let mut mirrors: BTreeMap<CompactString, Vec<(MirrorOpts, Arc<Repository>)>> = BTreeMap::new();
+
+        for opt in opts {
+            let repo = Repository::build(&opt, &cli_opts)?;
+
+            if let Some(set) = mirrors.get_mut(&opt.url) {
+                set.push((opt, repo));
+            } else {
+                mirrors.insert(opt.url.clone(), vec![(opt, repo)]);
+            }
+        }
+
+        let ctxs: Vec<(PruneContext, Vec<PruneDynStep>)> = mirrors.into_values()
+            .map(|mirrors| {
+                (Context::build(PruneState { mirrors, output: Default::default() }, cli_opts.clone(), Progress::new()), Self::create_steps())
+            })
+            .collect();
+
+
+        Ok(ctxs)
     }
 }

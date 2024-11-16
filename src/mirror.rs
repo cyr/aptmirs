@@ -178,7 +178,7 @@ impl Context<MirrorState> {
 
         opts.into_iter()
             .map(|o| {
-                let repo = Repository::build(&o, &cli_opts)?;
+                let repo = Repository::build_with_tmp(&o, &cli_opts)?;
 
                 let steps = Self::create_steps(&o);
 

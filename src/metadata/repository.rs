@@ -35,6 +35,35 @@ impl Repository {
         };
 
         let root_dir = local_dir_from_archive_url(&parsed_url, &cli_opts.output)?;
+
+        Ok(Arc::new(Self {
+            root_url,
+            root_dir,
+            dist_url,
+            tmp_dir: FilePath::from(""),
+            pgp_pub_key
+        }))
+    }
+
+    pub fn build_with_tmp(mirror_opts: &MirrorOpts, cli_opts: &CliOpts) -> Result<Arc<Self>> {
+        let root_url = match mirror_opts.url.as_str().strip_prefix('/') {
+            Some(url) => url.to_compact_string(),
+            None => mirror_opts.url.clone(),
+        };
+
+        let dist_url = format_compact!("{root_url}/dists/{}", mirror_opts.suite);
+
+        let parsed_url = Url::parse(&root_url)
+            .map_err(|_| MirsError::UrlParsing { url: root_url.clone() })?;
+
+        let pgp_pub_key = if let Some(pgp_signing_key) = &mirror_opts.pgp_pub_key {
+            let file = FilePath::from_str(pgp_signing_key.as_ref())?;
+            Some(read_public_key(&file)?)
+        } else {
+            None
+        };
+
+        let root_dir = local_dir_from_archive_url(&parsed_url, &cli_opts.output)?;
         let tmp_dir = create_tmp_dir(&parsed_url, &mirror_opts.suite, &cli_opts.output)?;
 
         Ok(Arc::new(Self {
@@ -144,34 +173,12 @@ impl Repository {
     pub fn create_metadata_download(&self, url: CompactString, file_path: FilePath, file_entry: FileEntry, by_hash: bool) -> Result<Box<Download>> {
         let size = file_entry.size;
 
-        let strongest_checksum = file_entry.strongest_hash();
-        let mut checksum_iter = file_entry.into_iter();
-
-        let mut symlink_paths = Vec::new();
-        let primary_target_path = if by_hash {
-            let by_hash_base = FilePath(
-                file_path.parent().unwrap_or("").to_compact_string()
-            );
-
-            symlink_paths.push(file_path);
-
-            let strongest_checksum = checksum_iter.next()
-                .ok_or_else(|| MirsError::NoReleaseFile)?;
-
-            for checksum in checksum_iter {
-                let hash_path = by_hash_base.join(checksum.relative_path());
-                symlink_paths.push(hash_path);
-            }
-
-            by_hash_base.join(strongest_checksum.relative_path())
-        } else {
-            file_path
-        };
+        let (checksum, primary_target_path, symlink_paths) = file_entry.into_paths(&file_path, by_hash)?;
 
         Ok(Box::new(Download {
             url,
             size: Some(size),
-            checksum: strongest_checksum,
+            checksum,
             primary_target_path,
             symlink_paths,
             always_download: false

@@ -5,6 +5,7 @@ use clap::{command, Parser};
 
 use crate::context::Context;
 use crate::log;
+use crate::prune::PruneState;
 use crate::{mirror::MirrorState, step::{Step, StepResult}};
 use crate::{config::MirrorOpts, pgp::PgpKeyStore, CliOpts};
 use crate::error::Result;
@@ -42,8 +43,11 @@ impl Cmd {
                 let ctxs = Context::<MirrorState>::create(opts, cli_opts, pgp_key_store)?;
                 self.run_all(ctxs).await;
             },
+            Cmd::Prune => {
+                let ctxs = Context::<PruneState>::create(opts, cli_opts)?;
+                self.run_all(ctxs).await;
+            },
             Cmd::Verify => todo!(),
-            Cmd::Prune => todo!(),
         }
 
         Ok(())

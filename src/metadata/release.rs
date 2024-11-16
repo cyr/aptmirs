@@ -380,6 +380,35 @@ impl FileEntry {
             self.md5.map(|v| v.into())
         }
     }
+
+    pub fn into_paths(self, file_path: &FilePath, by_hash: bool) -> Result<(Option<Checksum>, FilePath, Vec<FilePath>)> {
+        let strongest_checksum = self.strongest_hash();
+
+        let mut checksum_iter = self.into_iter();
+
+        let mut symlink_paths = Vec::new();
+        let primary_target_path = if by_hash {
+            let by_hash_base = FilePath(
+                file_path.parent().unwrap_or("").to_compact_string()
+            );
+
+            symlink_paths.push(file_path.clone());
+
+            let strongest_checksum = checksum_iter.next()
+                .ok_or_else(|| MirsError::NoReleaseFile)?;
+
+            for checksum in checksum_iter {
+                let hash_path = by_hash_base.join(checksum.relative_path());
+                symlink_paths.push(hash_path);
+            }
+
+            by_hash_base.join(strongest_checksum.relative_path())
+        } else {
+            file_path.clone()
+        };
+        
+        Ok((strongest_checksum, primary_target_path, symlink_paths))
+    }
 }
 
 impl IntoIterator for FileEntry {
