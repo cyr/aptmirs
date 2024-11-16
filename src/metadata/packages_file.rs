@@ -1,29 +1,29 @@
-use std::{collections::BTreeMap, fs::File, io::BufRead, sync::{atomic::AtomicU64, Arc}};
+use std::{fs::File, io::BufRead, sync::{atomic::AtomicU64, Arc}};
 
-use compact_str::{format_compact, ToCompactString};
+use compact_str::ToCompactString;
 
 use crate::error::{Result, MirsError};
 
-use super::{checksum::{Checksum, ChecksumType}, create_reader, FilePath, IndexFileEntry, IndexFileEntryIterator};
+use super::{checksum::{Checksum, ChecksumType}, create_reader, metadata_file::MetadataFile, IndexFileEntry, IndexFileEntryIterator};
 
 pub struct PackagesFile {
     reader: Box<dyn BufRead + Send>,
-    path: FilePath,
+    file: MetadataFile,
     buf: String,
     size: u64,
     read: Arc<AtomicU64>
 }
 
 impl PackagesFile {
-    pub fn build(path: &FilePath) -> Result<Box<dyn IndexFileEntryIterator>> {
-        let file = File::open(path)?;
+    pub fn build(meta_file: MetadataFile) -> Result<Box<dyn IndexFileEntryIterator>> {
+        let file = File::open(meta_file.path())?;
         let size = file.metadata()?.len();
 
-        let (reader, counter) = create_reader(file, path)?;
+        let (reader, counter) = create_reader(file, meta_file.path())?;
 
         Ok(Box::new(Self {
             reader,
-            path: path.to_owned(),
+            file: meta_file,
             buf: String::with_capacity(1024*8),
             size,
             read: counter,
@@ -40,8 +40,8 @@ impl IndexFileEntryIterator for PackagesFile {
         self.read.clone()
     }
     
-    fn path(&self) -> &FilePath {
-        &self.path
+    fn file(&self) -> &MetadataFile {
+        &self.file
     }
 }
 
@@ -59,7 +59,7 @@ impl Iterator for PackagesFile {
                 }
                 Err(e) => return Some(Err(
                     MirsError::ReadingPackage { 
-                        path: self.path.clone(), 
+                        path: self.file.path().clone(), 
                         inner: Box::new(e.into()) 
                     }
                 ))
@@ -122,38 +122,4 @@ impl Iterator for PackagesFile {
             None
         }
     }
-}
-
-pub fn into_filtered_by_extension<T: AsRef<FilePath>>(list: &mut Vec<T>) -> Vec<T> {
-    let mut existing_indices = BTreeMap::<FilePath, T>::new();
-
-    while let Some(index_file_path) = list.pop() {
-        let file_path = index_file_path.as_ref();
-
-        let file_stem = file_path.file_stem();
-        let path_with_stem = FilePath(format_compact!(
-            "{}/{}", 
-            file_path.parent().unwrap(), 
-            file_stem
-        ));
-
-        if let Some(val) = existing_indices.get_mut(&path_with_stem) {
-            let file_path = val.as_ref();
-            if is_extension_preferred(file_path.extension(), file_path.extension()) {
-                *val = index_file_path
-            }
-        } else {
-            existing_indices.insert(path_with_stem, index_file_path);
-        }
-    }
-    
-    existing_indices.into_values().collect()
-}
-
-fn is_extension_preferred(old: Option<&str>, new: Option<&str>) -> bool {
-    matches!((old, new),
-        (_, Some("gz")) |
-        (_, Some("xz")) |
-        (_, Some("bz2")) 
-    )
 }

@@ -35,7 +35,7 @@ impl Step<MirrorState> for DownloadDebianInstaller {
 
         let mut paths_to_delete = sum_files.iter()
             .map(|file| {
-                let base = file.path().parent()
+                let base = file.file().path().parent()
                     .expect("there should always be a parent");
 
                 let rel_path = ctx.state.repo.strip_tmp_base(base).expect("sum files should be in tmp");
@@ -50,7 +50,7 @@ impl Step<MirrorState> for DownloadDebianInstaller {
             let async_handle = Handle::current();
 
             for sum_file in sum_files {
-                let base_path = sum_file.path().parent()
+                let base_path = sum_file.file().path().parent()
                     .expect("sum files should have a parent");
 
                 let base_path = FilePath::from(base_path);

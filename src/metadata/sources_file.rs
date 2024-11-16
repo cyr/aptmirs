@@ -4,7 +4,7 @@ use compact_str::{format_compact, CompactString, ToCompactString};
 
 use crate::error::{Result, MirsError};
 
-use super::{checksum::Checksum, create_reader, FilePath, IndexFileEntry, IndexFileEntryIterator};
+use super::{checksum::Checksum, create_reader, metadata_file::MetadataFile, IndexFileEntry, IndexFileEntryIterator};
 
 pub struct SourceEntry {
     pub size: u64,
@@ -13,7 +13,7 @@ pub struct SourceEntry {
 
 pub struct SourcesFile {
     reader: Box<dyn BufRead + Send>,
-    path: FilePath,
+    file: MetadataFile,
     buf: String,
     files_buf: BTreeMap<CompactString, SourceEntry>,
     size: u64,
@@ -21,15 +21,15 @@ pub struct SourcesFile {
 }
 
 impl SourcesFile {
-    pub fn build(path: &FilePath) -> Result<Box<dyn IndexFileEntryIterator>> {
-        let file = File::open(path)?;
+    pub fn build(meta_file: MetadataFile) -> Result<Box<dyn IndexFileEntryIterator>> {
+        let file = File::open(meta_file.path())?;
         let size = file.metadata()?.len();
 
-        let (reader, counter) = create_reader(file, path)?;
+        let (reader, counter) = create_reader(file, meta_file.path())?;
 
         Ok(Box::new(Self {
             reader,
-            path: path.to_owned(),
+            file: meta_file,
             buf: String::with_capacity(1024*8),
             files_buf: BTreeMap::new(),
             size,
@@ -47,8 +47,8 @@ impl IndexFileEntryIterator for SourcesFile {
         self.read.clone()
     }
     
-    fn path(&self) -> &FilePath {
-        &self.path
+    fn file(&self) -> &MetadataFile {
+        &self.file
     }
 }
 
@@ -66,7 +66,7 @@ impl Iterator for SourcesFile {
                     Ok(_) => (),
                     Err(e) => return Some(Err(
                         MirsError::ReadingPackage { 
-                            path: self.path.clone(), 
+                            path: self.file.path().clone(), 
                             inner: Box::new(e.into()) 
                         }
                     ))
@@ -83,7 +83,7 @@ impl Iterator for SourcesFile {
                         let mut parts = line.split_whitespace();
 
                         let Some(checksum_part) = parts.next() else {
-                            return Some(Err(MirsError::ParsingSources { path: self.path.clone() }))
+                            return Some(Err(MirsError::ParsingSources { path: self.file.path().clone() }))
                         };
     
                         let checksum = match Checksum::try_from(checksum_part) {
@@ -92,7 +92,7 @@ impl Iterator for SourcesFile {
                         };
                         
                         let Some(size_part) = parts.next() else {
-                            return Some(Err(MirsError::ParsingSources { path: self.path.clone() }))
+                            return Some(Err(MirsError::ParsingSources { path: self.file.path().clone() }))
                         };
     
                         let size: u64 = match size_part.parse() {
@@ -101,7 +101,7 @@ impl Iterator for SourcesFile {
                         };
     
                         let Some(file_name) = parts.next() else {
-                            return Some(Err(MirsError::ParsingSources { path: self.path.clone() }))
+                            return Some(Err(MirsError::ParsingSources { path: self.file.path().clone() }))
                         };
 
                         let file_name = CompactString::from(file_name);
@@ -123,7 +123,7 @@ impl Iterator for SourcesFile {
             }
 
             let Some(dir) = maybe_dir else {
-                return Some(Err(MirsError::ParsingSources { path: self.path.clone() }))
+                return Some(Err(MirsError::ParsingSources { path: self.file.path().clone() }))
             };
 
             let mut new_map = BTreeMap::new();

@@ -41,7 +41,7 @@ impl Step<MirrorState> for DownloadFromDiffs {
 
             for diff_index in diff_indices {
                 let rel_base_path = FilePath::from_str(
-                    task_repo.rel_from_tmp(diff_index.path().parent().expect("diff indicies should have parents"))
+                    task_repo.rel_from_tmp(diff_index.file().path().parent().expect("diff indicies should have parents"))
                 )?;
 
                 for diff_file in diff_index {

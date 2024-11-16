@@ -4,30 +4,26 @@ use compact_str::{CompactString, ToCompactString};
 
 use crate::error::{MirsError, Result};
 
-use super::{checksum::Checksum, create_reader, FilePath, IndexFileEntry, IndexFileEntryIterator};
+use super::{checksum::Checksum, create_reader, metadata_file::MetadataFile, IndexFileEntry, IndexFileEntryIterator};
 
 pub struct SumFile {
     reader: Box<dyn BufRead + Send>,
-    path: FilePath,
+    file: MetadataFile,
     buf: String,
     size: u64,
     read: Arc<AtomicU64>
 }
 
 impl SumFile {
-    pub fn path(&self) -> &FilePath {
-        &self.path
-    }
-    
-    pub fn build(path: &FilePath) -> Result<Box<dyn IndexFileEntryIterator>> {
-        let file = File::open(path)?;
+    pub fn build(meta_file: MetadataFile) -> Result<Box<dyn IndexFileEntryIterator>> {
+        let file = File::open(meta_file.path())?;
         let size = file.metadata()?.len();
 
-        let (reader, counter) = create_reader(file, path)?;
+        let (reader, counter) = create_reader(file, meta_file.path())?;
 
         Ok(Box::new(Self {
             reader,
-            path: path.to_owned(),
+            file: meta_file,
             buf: String::with_capacity(1024*8),
             size,
             read: counter
@@ -44,8 +40,8 @@ impl IndexFileEntryIterator for SumFile {
         self.read.clone()
     }
     
-    fn path(&self) -> &FilePath {
-        &self.path
+    fn file(&self) -> &MetadataFile {
+        &self.file
     }
 }
 
@@ -59,7 +55,7 @@ impl Iterator for SumFile {
             Ok(0) => return None,
             Ok(size) => &self.buf[..size],
             Err(e) => return Some(Err(MirsError::SumFileParsing { 
-                path: self.path().clone(), 
+                path: self.file.path().clone(), 
                 inner: Box::new(e.into())
             }))
         };

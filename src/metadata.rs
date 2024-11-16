@@ -2,7 +2,7 @@ use std::{fmt::Display, fs::Metadata, io::{BufRead, BufReader, Read}, path::Path
 
 use compact_str::{format_compact, CompactString, ToCompactString};
 use diff_index_file::DiffIndexFile;
-use metadata_file::{is_debian_installer_sumfile, is_diff_index_file, is_packages_file, is_sources_file};
+use metadata_file::{is_debian_installer_sumfile, is_diff_index_file, is_packages_file, is_sources_file, MetadataFile};
 use sum_file::SumFile;
 
 use crate::error::{Result, MirsError};
@@ -134,26 +134,26 @@ impl FilePath {
     }
 }
 
-pub enum IndexSource<T> {
-    Packages(T),
-    Sources(T),
-    DebianInstallerSumFile(T),
-    DiffIndex(T),
+pub enum IndexSource {
+    Packages(MetadataFile),
+    Sources(MetadataFile),
+    DebianInstallerSumFile(MetadataFile),
+    DiffIndex(MetadataFile),
 }
 
-impl<T: AsRef<FilePath>> IndexSource<T> {
+impl IndexSource {
     pub fn into_reader(self) -> Result<Box<dyn IndexFileEntryIterator>> {
         match self {
-            IndexSource::Packages(path) => PackagesFile::build(path.as_ref()),
-            IndexSource::Sources(path) => SourcesFile::build(path.as_ref()),
-            IndexSource::DebianInstallerSumFile(path) => SumFile::build(path.as_ref()),
-            IndexSource::DiffIndex(path) => DiffIndexFile::build(path.as_ref()),
+            IndexSource::Packages(file) => PackagesFile::build(file),
+            IndexSource::Sources(file) => SourcesFile::build(file),
+            IndexSource::DebianInstallerSumFile(file) => SumFile::build(file),
+            IndexSource::DiffIndex(file) => DiffIndexFile::build(file),
         }
     }
 }
 
-impl<T: AsRef<FilePath>> From<T> for IndexSource<T> {
-    fn from(value: T) -> Self {
+impl From<MetadataFile> for IndexSource {
+    fn from(value: MetadataFile) -> Self {
         let file = value.as_ref();
 
         if is_packages_file(file) {
@@ -173,7 +173,7 @@ impl<T: AsRef<FilePath>> From<T> for IndexSource<T> {
 pub trait IndexFileEntryIterator : Iterator<Item = Result<IndexFileEntry>> + Send {
     fn size(&self) -> u64;
     fn counter(&self) -> Arc<AtomicU64>;
-    fn path(&self) -> &FilePath;
+    fn file(&self) -> &MetadataFile;
 }
 
 #[derive(Debug)]

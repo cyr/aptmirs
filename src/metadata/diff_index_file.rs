@@ -4,12 +4,12 @@ use compact_str::{CompactString, ToCompactString};
 
 use crate::error::{MirsError, Result};
 
-use super::{checksum::Checksum, create_reader, release::FileEntry, FilePath, IndexFileEntry, IndexFileEntryIterator};
+use super::{checksum::Checksum, create_reader, metadata_file::MetadataFile, release::FileEntry, IndexFileEntry, IndexFileEntryIterator};
 
 pub struct DiffIndexFile {
     pub files: BTreeMap<CompactString, FileEntry>,
     reader: Box<dyn BufRead + Send>,
-    path: FilePath,
+    file: MetadataFile,
     buf: String,
     size: u64,
     read: Arc<AtomicU64>
@@ -24,8 +24,8 @@ impl IndexFileEntryIterator for DiffIndexFile {
         self.read.clone()
     }
     
-    fn path(&self) -> &FilePath {
-        &self.path
+    fn file(&self) -> &MetadataFile {
+        &self.file
     }
 }
 
@@ -54,11 +54,11 @@ impl Iterator for DiffIndexFile {
                     let mut split = line.split_ascii_whitespace();
 
                     let (Some(hash), Some(size), Some(path)) = (split.next(), split.next(), split.next()) else {
-                        return Some(Err(MirsError::ParsingDiffIndex { path: self.path.to_owned() }))
+                        return Some(Err(MirsError::ParsingDiffIndex { path: self.file.path().to_owned() }))
                     };
 
                     let Ok(size) = size.parse() else {
-                        return Some(Err(MirsError::ParsingDiffIndex { path: self.path.to_owned() }))
+                        return Some(Err(MirsError::ParsingDiffIndex { path: self.file.path().to_owned() }))
                     };
 
                     if !self.files.contains_key(path) {
@@ -76,7 +76,7 @@ impl Iterator for DiffIndexFile {
                     let entry = self.files.get_mut(path).unwrap();
 
                     let Ok(checksum) = Checksum::try_from(hash) else {
-                        return Some(Err(MirsError::ParsingDiffIndex { path: self.path.to_owned() }))
+                        return Some(Err(MirsError::ParsingDiffIndex { path: self.file.path().to_owned() }))
                     };
 
                     match checksum {
@@ -103,16 +103,16 @@ impl Iterator for DiffIndexFile {
 }
 
 impl DiffIndexFile {
-    pub fn build(path: &FilePath) -> Result<Box<dyn IndexFileEntryIterator>> {
-        let file = File::open(path)?;
+    pub fn build(meta_file: MetadataFile) -> Result<Box<dyn IndexFileEntryIterator>> {
+        let file = File::open(meta_file.path())?;
         let size = file.metadata()?.len();
 
-        let (reader, counter) = create_reader(file, path)?;
+        let (reader, counter) = create_reader(file, meta_file.path())?;
 
         Ok(Box::new(Self {
             files: BTreeMap::new(),
             reader,
-            path: path.to_owned(),
+            file: meta_file,
             buf: String::with_capacity(1024*8),
             size,
             read: counter,
