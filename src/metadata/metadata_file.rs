@@ -2,7 +2,10 @@
 use ahash::{HashMap, HashMapExt};
 use compact_str::{format_compact, CompactString, ToCompactString};
 
-use super::FilePath;
+use crate::{error::MirsError, Result};
+
+use super::{diff_index_file::DiffIndexFile, packages_file::PackagesFile, sources_file::SourcesFile, sum_file::SumFile, FilePath, IndexFileEntryIterator};
+
 
 #[derive(Debug)]
 pub enum MetadataFile {
@@ -69,6 +72,16 @@ impl MetadataFile {
 
     pub fn exists(&self) -> bool {
         self.path().exists()
+    }
+
+    pub fn into_reader(self) -> Result<Box<dyn IndexFileEntryIterator>> {
+        match &self {
+            MetadataFile::Packages(..) => PackagesFile::build(self),
+            MetadataFile::Sources(..) => SourcesFile::build(self),
+            MetadataFile::DiffIndex(..) => DiffIndexFile::build(self),
+            MetadataFile::DebianInstallerSumFile(..) => SumFile::build(self),
+            MetadataFile::Other(file_path) => return Err(MirsError::NonIndexFileBuild { path: file_path.to_owned() } ),
+        }
     }
 }
 

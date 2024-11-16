@@ -1,13 +1,11 @@
 use std::{fmt::Display, fs::Metadata, io::{BufRead, BufReader, Read}, path::Path, str::FromStr, sync::{atomic::{AtomicU64, Ordering}, Arc}};
 
 use compact_str::{format_compact, CompactString, ToCompactString};
-use diff_index_file::DiffIndexFile;
-use metadata_file::{is_debian_installer_sumfile, is_diff_index_file, is_packages_file, is_sources_file, MetadataFile};
-use sum_file::SumFile;
+use metadata_file::MetadataFile;
 
 use crate::error::{Result, MirsError};
 
-use self::{checksum::Checksum, packages_file::PackagesFile, sources_file::SourcesFile};
+use self::checksum::Checksum;
 
 pub mod release;
 pub mod packages_file;
@@ -131,42 +129,6 @@ impl FilePath {
         }
 
         FilePath(format_compact!("{first}/{other}"))
-    }
-}
-
-pub enum IndexSource {
-    Packages(MetadataFile),
-    Sources(MetadataFile),
-    DebianInstallerSumFile(MetadataFile),
-    DiffIndex(MetadataFile),
-}
-
-impl IndexSource {
-    pub fn into_reader(self) -> Result<Box<dyn IndexFileEntryIterator>> {
-        match self {
-            IndexSource::Packages(file) => PackagesFile::build(file),
-            IndexSource::Sources(file) => SourcesFile::build(file),
-            IndexSource::DebianInstallerSumFile(file) => SumFile::build(file),
-            IndexSource::DiffIndex(file) => DiffIndexFile::build(file),
-        }
-    }
-}
-
-impl From<MetadataFile> for IndexSource {
-    fn from(value: MetadataFile) -> Self {
-        let file = value.as_ref();
-
-        if is_packages_file(file) {
-            return IndexSource::Packages(value)
-        } else if is_sources_file(file) {
-            return IndexSource::Sources(value)
-        } else if is_debian_installer_sumfile(file) {
-            return IndexSource::DebianInstallerSumFile(value)
-        } else if is_diff_index_file(file) {
-            return IndexSource::DiffIndex(value)
-        }
-
-        panic!("implementation error; non-index file as IndexSource")
     }
 }
 

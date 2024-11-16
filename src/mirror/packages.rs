@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use indicatif::MultiProgress;
 use tokio::{runtime::Handle, task::spawn_blocking};
 
-use crate::{context::Context, error::{MirsError, Result}, metadata::{metadata_file::MetadataFile, IndexSource}, progress::Progress, step::{Step, StepResult}};
+use crate::{context::Context, error::{MirsError, Result}, metadata::metadata_file::MetadataFile, progress::Progress, step::{Step, StepResult}};
 
 use super::{MirrorResult, MirrorState};
 
@@ -36,8 +36,7 @@ impl Step<MirrorState> for DownloadFromPackageIndices {
         let packages_files = output.take_metadata(
                 |f| matches!(f, MetadataFile::Packages(..) | MetadataFile::Sources(..) )
             ).into_iter()
-            .map(IndexSource::from)
-            .map(IndexSource::into_reader)
+            .map(MetadataFile::into_reader)
             .collect::<Result<Vec<_>>>()?;
 
         file_progress.files.inc_total(packages_files.len() as u64);

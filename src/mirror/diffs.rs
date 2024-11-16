@@ -3,7 +3,7 @@ use std::{str::FromStr, sync::Arc};
 use async_trait::async_trait;
 use tokio::{runtime::Handle, task::spawn_blocking};
 
-use crate::{context::Context, error::MirsError, metadata::{metadata_file::MetadataFile, FilePath, IndexSource}, step::{Step, StepResult}};
+use crate::{context::Context, error::MirsError, metadata::{metadata_file::MetadataFile, FilePath}, step::{Step, StepResult}};
 use crate::error::Result;
 
 use super::{MirrorResult, MirrorState};
@@ -30,8 +30,7 @@ impl Step<MirrorState> for DownloadFromDiffs {
         let diff_indices = output.take_metadata(
                 |f| matches!(f, MetadataFile::DiffIndex(..) )
             ).into_iter()
-            .map(IndexSource::from)
-            .map(IndexSource::into_reader)
+            .map(MetadataFile::into_reader)
             .collect::<Result<Vec<_>>>()?;
 
         let task_repo = ctx.state.repo.clone();

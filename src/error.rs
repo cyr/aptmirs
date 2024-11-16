@@ -114,4 +114,7 @@ pub enum MirsError {
 
     #[error("could not verify PGP signature")]
     PgpNotVerified,
+
+    #[error("non-index file can't be made into readers")]
+    NonIndexFileBuild { path: FilePath },
 }

@@ -4,7 +4,7 @@ use ahash::HashSet;
 use async_trait::async_trait;
 use compact_str::format_compact;
 
-use crate::{context::Context, error::MirsError, metadata::{metadata_file::{deduplicate_metadata, MetadataFile}, release::Release, FilePath, IndexSource}, step::{Step, StepResult}};
+use crate::{context::Context, error::MirsError, metadata::{metadata_file::{deduplicate_metadata, MetadataFile}, release::Release, FilePath}, step::{Step, StepResult}};
 use crate::error::Result;
 
 use super::{PruneResult, PruneState};
@@ -67,8 +67,7 @@ impl Step<PruneState> for Inventory {
                     v.prefix_with(dist_root.as_str());
                     v
                 })
-                .map(IndexSource::from)
-                .map(|v| v.into_reader())
+                .map(MetadataFile::into_reader)
                 .collect::<Result<Vec<_>>>()?;
             
             for mut meta_file in index_files {

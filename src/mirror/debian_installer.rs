@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tokio::{runtime::Handle, task::spawn_blocking};
 
-use crate::{context::Context, error::{MirsError, Result}, metadata::{metadata_file::MetadataFile, FilePath, IndexSource}, step::{Step, StepResult}};
+use crate::{context::Context, error::{MirsError, Result}, metadata::{metadata_file::MetadataFile, FilePath}, step::{Step, StepResult}};
 
 use super::{MirrorResult, MirrorState};
 
@@ -29,8 +29,7 @@ impl Step<MirrorState> for DownloadDebianInstaller {
         let sum_files = output.take_metadata(
                 |f| matches!(f, MetadataFile::DebianInstallerSumFile(..) )
             ).into_iter()
-            .map(IndexSource::from)
-            .map(IndexSource::into_reader)
+            .map(MetadataFile::into_reader)
             .collect::<Result<Vec<_>>>()?;
 
         let mut paths_to_delete = sum_files.iter()
