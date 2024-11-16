@@ -56,6 +56,7 @@ impl Step<MirrorState> for DownloadDebianInstaller {
                 let base_path = FilePath::from(base_path);
 
                 for file in sum_file {
+                    
                     let file = file?;
 
                     let new_path = base_path.join(&file.path);

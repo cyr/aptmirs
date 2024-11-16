@@ -64,8 +64,6 @@ impl Iterator for SumFile {
             }))
         };
 
-        eprintln!("line is: {line}");
-
         let mut split = line.split_whitespace();
 
         let (Some(checksum_str), Some(path_str)) = (split.next(), split.next()) else {

@@ -146,8 +146,8 @@ impl<T: AsRef<FilePath>> IndexSource<T> {
         match self {
             IndexSource::Packages(path) => PackagesFile::build(path.as_ref()),
             IndexSource::Sources(path) => SourcesFile::build(path.as_ref()),
-            IndexSource::DebianInstallerSumFile(path) => DiffIndexFile::build(path.as_ref()),
-            IndexSource::DiffIndex(path) => SumFile::build(path.as_ref()),
+            IndexSource::DebianInstallerSumFile(path) => SumFile::build(path.as_ref()),
+            IndexSource::DiffIndex(path) => DiffIndexFile::build(path.as_ref()),
         }
     }
 }
@@ -176,6 +176,7 @@ pub trait IndexFileEntryIterator : Iterator<Item = Result<IndexFileEntry>> + Sen
     fn path(&self) -> &FilePath;
 }
 
+#[derive(Debug)]
 pub struct IndexFileEntry {
     pub path: CompactString,
     pub size: Option<u64>,

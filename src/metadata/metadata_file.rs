@@ -4,6 +4,7 @@ use compact_str::{format_compact, CompactString, ToCompactString};
 
 use super::FilePath;
 
+#[derive(Debug)]
 pub enum MetadataFile {
     Packages(FilePath),
     Sources(FilePath),
