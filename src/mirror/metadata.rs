@@ -52,7 +52,7 @@ impl Step<MirrorState> for DownloadMetadata {
 
                 let checksum_path = FilePath(format_compact!("{by_hash_base}/{}", checksum.relative_path()));
 
-                if let MetadataFile::DebianInstallerSumFile(..) = &file {
+                if let MetadataFile::SumFile(..) = &file {
                     if file_path_in_root.exists() && !ctx.cli_opts.force {
                         continue
                     }
@@ -62,7 +62,7 @@ impl Step<MirrorState> for DownloadMetadata {
             }
 
             if file.is_index() {
-                if let MetadataFile::DebianInstallerSumFile(..) = &file {
+                if let MetadataFile::SumFile(..) = &file {
                     add_by_hash = false;
                 }
 

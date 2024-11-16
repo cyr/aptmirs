@@ -85,7 +85,7 @@ impl Step<PruneState> for Inventory {
                 let base_path = match meta_file.file() {
                     MetadataFile::Packages(..) |
                     MetadataFile::Sources(..) => FilePath::from(""),
-                    MetadataFile::DebianInstallerSumFile(file_path) |
+                    MetadataFile::SumFile(file_path) |
                     MetadataFile::DiffIndex(file_path) => {
                         FilePath::from(
                             file_path.parent()

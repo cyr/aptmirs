@@ -12,7 +12,7 @@ pub enum MetadataFile {
     Packages(FilePath),
     Sources(FilePath),
     DiffIndex(FilePath),
-    DebianInstallerSumFile(FilePath),
+    SumFile(FilePath),
     Other(FilePath)
 }
 
@@ -22,7 +22,7 @@ impl MetadataFile {
             MetadataFile::Packages(file_path) |
             MetadataFile::Sources(file_path) |
             MetadataFile::DiffIndex(file_path) |
-            MetadataFile::DebianInstallerSumFile(file_path) |
+            MetadataFile::SumFile(file_path) |
             MetadataFile::Other(file_path) => file_path
         }
     }
@@ -32,7 +32,7 @@ impl MetadataFile {
             MetadataFile::Packages(file_path) |
             MetadataFile::Sources(file_path) |
             MetadataFile::DiffIndex(file_path) |
-            MetadataFile::DebianInstallerSumFile(file_path) |
+            MetadataFile::SumFile(file_path) |
             MetadataFile::Other(file_path) => file_path
         }
     }
@@ -61,7 +61,7 @@ impl MetadataFile {
                 let parent = file_path.parent().unwrap_or("");
                 FilePath(format_compact!("{parent}/{stem}"))
             },
-            MetadataFile::DebianInstallerSumFile(file_path) => {
+            MetadataFile::SumFile(file_path) => {
                 let path = file_path.parent().unwrap();
                 FilePath(path.to_compact_string())
             },
@@ -79,7 +79,7 @@ impl MetadataFile {
             MetadataFile::Packages(..) => PackagesFile::build(self),
             MetadataFile::Sources(..) => SourcesFile::build(self),
             MetadataFile::DiffIndex(..) => DiffIndexFile::build(self),
-            MetadataFile::DebianInstallerSumFile(..) => SumFile::build(self),
+            MetadataFile::SumFile(..) => SumFile::build(self),
             MetadataFile::Other(file_path) => Err(MirsError::NonIndexFileBuild { path: file_path.to_owned() } ),
         }
     }
@@ -114,7 +114,7 @@ impl From<CompactString> for MetadataFile {
         }
         
         if is_debian_installer_sumfile(&value) {
-            return MetadataFile::DebianInstallerSumFile(value)
+            return MetadataFile::SumFile(value)
         }
 
         MetadataFile::Other(value)
@@ -154,9 +154,9 @@ pub fn deduplicate_metadata(files: Vec<MetadataFile>) -> Vec<MetadataFile> {
                     continue
                 }
             },
-            MetadataFile::DebianInstallerSumFile(sum_file) => {
+            MetadataFile::SumFile(sum_file) => {
                 if let Some(old_file) = map.get_mut(&canonical) {
-                    let MetadataFile::DebianInstallerSumFile(old) = old_file else {
+                    let MetadataFile::SumFile(old) = old_file else {
                         panic!("implementation error; non-sumfile being compared to sumfile")
                     };
 

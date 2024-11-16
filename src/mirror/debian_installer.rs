@@ -27,7 +27,7 @@ impl Step<MirrorState> for DownloadDebianInstaller {
         let mut output = ctx.state.output.lock().await;
 
         let sum_files = output.take_metadata(
-                |f| matches!(f, MetadataFile::DebianInstallerSumFile(..) )
+                |f| matches!(f, MetadataFile::SumFile(..) )
             ).into_iter()
             .map(MetadataFile::into_reader)
             .collect::<Result<Vec<_>>>()?;
