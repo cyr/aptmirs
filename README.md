@@ -78,7 +78,7 @@ Mirror operation
 ./aptmirs --config ./mirror.list --output /opt/mirror-root
 ```
 
-PruneMirror operation
+Prune operation
 ```
 ./aptmirs --config ./mirror.list --output /opt/mirror-root prune
 ```
