@@ -16,7 +16,7 @@ pub struct Repository {
 }
 
 impl Repository {
-    pub fn build(mirror_opts: &MirrorOpts, cli_opts: &CliOpts) -> Result<Arc<Self>> {
+    pub fn build(mirror_opts: &MirrorOpts, cli_opts: &CliOpts) -> Result<Self> {
         let root_url = match mirror_opts.url.as_str().strip_prefix('/') {
             Some(url) => url.to_compact_string(),
             None => mirror_opts.url.clone(),
@@ -36,13 +36,13 @@ impl Repository {
 
         let root_dir = local_dir_from_archive_url(&parsed_url, &cli_opts.output)?;
 
-        Ok(Arc::new(Self {
+        Ok(Self {
             root_url,
             root_dir,
             dist_url,
             tmp_dir: FilePath::from(""),
             pgp_pub_key
-        }))
+        })
     }
 
     pub fn build_with_tmp(mirror_opts: &MirrorOpts, cli_opts: &CliOpts) -> Result<Arc<Self>> {

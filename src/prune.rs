@@ -28,9 +28,11 @@ pub enum PruneResult {
 
 impl CmdResult for PruneResult { }
 
+#[derive(Default)]
 pub struct PruneState {
     pub mirrors: Vec<(MirrorOpts, Arc<Repository>)>,
     pub output: Arc<Mutex<PruneOutput>>,
+    pub exclude_paths: Vec<FilePath>,
     pub dry_run: bool,
 }
 
@@ -96,7 +98,7 @@ impl Context<PruneState> {
     }
 
     pub fn create(opts: Vec<MirrorOpts>, cli_opts: Arc<CliOpts>, dry_run: bool) -> Result<Vec<(PruneContext, Vec<PruneDynStep>)>> {
-        let mut mirrors: BTreeMap<CompactString, Vec<(MirrorOpts, Arc<Repository>)>> = BTreeMap::new();
+        let mut mirrors: BTreeMap<CompactString, Vec<(MirrorOpts, Repository)>> = BTreeMap::new();
 
         for opt in opts {
             let repo = Repository::build(&opt, &cli_opts)?;
@@ -108,12 +110,31 @@ impl Context<PruneState> {
             }
         }
 
-        let ctxs: Vec<(PruneContext, Vec<PruneDynStep>)> = mirrors.into_values()
-            .map(|mirrors| {
-                (Context::build(PruneState { mirrors, output: Default::default(), dry_run }, cli_opts.clone(), Progress::new()), Self::create_steps())
+        let mirrors: Vec<Vec<(MirrorOpts, Repository)>> = mirrors.into_values().collect();
+
+        let mut exclude_paths = vec![Vec::new(); mirrors.len()];
+
+        for i in 0..mirrors.len() {
+            let root_dir = mirrors[i].first().expect("there should be at least one mirror").1.root_dir.as_str();
+
+            let exclude: Vec<FilePath> = mirrors.iter()
+                .map(|v| {
+                    v.first().expect("there should be at least one mirror").1.root_dir.as_str()
+                })
+                .filter(|v| root_dir != *v && v.starts_with(root_dir))
+                .map(FilePath::from)
+                .collect();
+
+            exclude_paths[i] = exclude;
+        }
+
+        let ctxs: Vec<(PruneContext, Vec<PruneDynStep>)> = mirrors.into_iter()
+            .zip(exclude_paths)
+            .map(|(mirrors, exclude_paths)| {
+                let mirrors = mirrors.into_iter().map(|(opts, repo)| (opts, Arc::new(repo))).collect();
+                (Context::build(PruneState { mirrors, exclude_paths, dry_run, .. Default::default() }, cli_opts.clone(), Progress::new()), Self::create_steps())
             })
             .collect();
-
 
         Ok(ctxs)
     }
