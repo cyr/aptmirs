@@ -11,6 +11,14 @@ This should make keeping an up to date mirror of a repository less stressful for
 
 During an update metadata files (Packages, Release, etc) are kept in a temporary folder until all deb-packages are downloaded. When completed, the files are moved into the target mirror folder. This should limit the time the repository is dysfunctional during an update.
 
+## Commands
+
+There are three operations: mirror, prune and verify.
+
+* **mirror** is the default operation and will be run if no command is specified.
+* **prune** will remove all unreferenced files inside a mirror, using the configuration to determine what files are valid. This is useful to remove old packages to free up space. Prune can also be run with --dry-run, which will only print the files that are unreferenced instead of deleting them.
+* **verify** will verify a downloaded mirror, using the configuration as source of truth, and make sure that all files matches its referenced checksum.
+
 ## Configuration
 
 aptmirs uses a config file very similar to the sources.list format.
@@ -65,6 +73,17 @@ deb [arch=amd64 pgp_pub_key=/etc/apt/trusted.gpg.d/debian-archive-bookworm-stabl
 
 ## Usage
 
+Mirror operation
 ```
 ./aptmirs --config ./mirror.list --output /opt/mirror-root
+```
+
+PruneMirror operation
+```
+./aptmirs --config ./mirror.list --output /opt/mirror-root prune
+```
+
+Verify operation
+```
+./aptmirs --config ./mirror.list --output /opt/mirror-root verify
 ```
