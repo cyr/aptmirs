@@ -91,6 +91,9 @@ pub enum MirsError {
     #[error("error occurred while taking inventory for pruning: {inner}")]
     Inventory { inner: Box<MirsError> },
 
+    #[error("error occurred while verifying: {inner}")]
+    Verify { inner: Box<MirsError> },
+
     #[error("error occurred while pruning: {inner}")]
     Delete { inner: Box<MirsError> },
 

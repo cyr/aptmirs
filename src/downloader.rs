@@ -35,16 +35,12 @@ impl Downloader {
         let (sender, receiver) = bounded(1024);
 
         let mut tasks = Vec::with_capacity(num_threads as usize);
-
         let progress = Progress::new();
-
         let http_client = reqwest::Client::new();
 
         for _ in 0..num_threads {
             let task_receiver: Receiver<Box<Download>> = receiver.clone();
-
             let task_progress = progress.clone();
-
             let task_http_client = http_client.clone();
 
             let handle = tokio::spawn(async move {

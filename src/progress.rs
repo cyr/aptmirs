@@ -187,7 +187,8 @@ impl Progress {
 pub struct ProgressPart {
     total: Arc<AtomicU64>,
     success: Arc<AtomicU64>,
-    skipped: Arc<AtomicU64>
+    skipped: Arc<AtomicU64>,
+    failed: Arc<AtomicU64>
 }
 
 impl ProgressPart {
@@ -196,6 +197,7 @@ impl ProgressPart {
             total: Arc::new(AtomicU64::new(0)),
             success: Arc::new(AtomicU64::new(0)),
             skipped: Arc::new(AtomicU64::new(0)),
+            failed: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -215,6 +217,10 @@ impl ProgressPart {
         self.skipped.fetch_add(count, Ordering::SeqCst);
     }
 
+    pub fn inc_failed(&self, count: u64) {
+        self.failed.fetch_add(count, Ordering::SeqCst);
+    }
+
     pub fn total(&self) -> u64 {
         self.total.load(Ordering::SeqCst)
     }
@@ -227,15 +233,21 @@ impl ProgressPart {
         self.skipped.load(Ordering::SeqCst)
     }
 
+    pub fn failed(&self) -> u64 {
+        self.failed.load(Ordering::SeqCst)
+    }
+
     pub fn remaining(&self) -> u64 {
         self.total.load(Ordering::SeqCst) -
             self.success.load(Ordering::SeqCst) -
-            self.skipped.load(Ordering::SeqCst)
+            self.skipped.load(Ordering::SeqCst) -
+            self.failed.load(Ordering::SeqCst)
     }
 
     pub fn reset(&self) {
         self.total.store(0, Ordering::SeqCst);
         self.success.store(0, Ordering::SeqCst);
         self.skipped.store(0, Ordering::SeqCst);
+        self.failed.store(0, Ordering::SeqCst);
     }
 }
