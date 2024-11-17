@@ -60,7 +60,7 @@ impl Step<PruneState> for Delete {
             ctx.progress.update_for_files(&mut progress_bar);
         }
 
-        progress_bar.finish_using_style();
+        progress_bar.abandon();
 
         output.total_valid = ctx.progress.files.skipped();
         output.total_valid_bytes = ctx.progress.bytes.skipped();
