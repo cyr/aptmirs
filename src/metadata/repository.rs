@@ -109,6 +109,17 @@ impl Repository {
             .map_err(MirsError::from)
     }
 
+    pub fn strip_root<'a>(&'a self, path: &'a str) -> &'a str {
+        let Some(path) = path.strip_prefix(self.root_dir.as_str()) else {
+            return path
+        };
+
+        match path.strip_prefix('/') {
+            Some(p) => p,
+            None => path
+        }
+    }
+
     pub fn rel_from_tmp<'a>(&self, path: &'a str) -> &'a str {
         path.strip_prefix(self.tmp_dir.as_str())
             .expect("input path should be in tmp dir")

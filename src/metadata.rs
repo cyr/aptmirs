@@ -1,4 +1,4 @@
-use std::{fmt::Display, fs::Metadata, io::{BufRead, BufReader, Read}, path::Path, str::FromStr, sync::{atomic::{AtomicU64, Ordering}, Arc}};
+use std::{borrow::Borrow, fmt::Display, fs::Metadata, io::{BufRead, BufReader, Read}, path::Path, str::FromStr, sync::{atomic::{AtomicU64, Ordering}, Arc}};
 
 use compact_str::{format_compact, CompactString, ToCompactString};
 use metadata_file::MetadataFile;
@@ -18,6 +18,12 @@ pub mod metadata_file;
 
 #[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord, Default, Hash)]
 pub struct FilePath(pub CompactString);
+
+impl Borrow<str> for FilePath {
+    fn borrow(&self) -> &str {
+        self.as_str()
+    }
+}
 
 impl FromStr for FilePath {
     type Err = MirsError;

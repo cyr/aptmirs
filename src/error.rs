@@ -100,6 +100,9 @@ pub enum MirsError {
     #[error("error reading {path}: {inner}")]
     ReadingPackage { path: FilePath, inner: Box<MirsError> },
 
+    #[error("error reading path: {inner}")]
+    WalkDir { #[from]inner: walkdir::Error },
+
     #[error("PGP error: {inner}")]
     Pgp { #[from] inner: pgp::errors::Error },
 

@@ -4,7 +4,7 @@ use ahash::HashSet;
 use async_trait::async_trait;
 use compact_str::format_compact;
 
-use crate::{context::Context, error::MirsError, metadata::{metadata_file::{deduplicate_metadata, MetadataFile}, release::{FileEntry, Release}, FilePath}, mirror::verify_and_prune, progress::Progress, step::{Step, StepResult}};
+use crate::{context::Context, error::MirsError, metadata::{metadata_file::{deduplicate_metadata, MetadataFile}, release::{FileEntry, Release}, repository::Repository, FilePath}, mirror::verify_and_prune, progress::Progress, step::{Step, StepResult}};
 use crate::error::Result;
 
 use super::{PruneResult, PruneState};
@@ -47,7 +47,7 @@ impl Step<PruneState> for Inventory {
             let mut metadata: Vec<(MetadataFile, FileEntry)> = release.into_filtered_files(opts).collect();
 
             for f in release_files {
-                add_valid_metadata_file(&mut progress, &mut state.files, &f, repo.root_dir.as_str());
+                add_valid_metadata_file(&mut progress, &mut state.files, &f, repo);
             }
 
             for (metadata_file, file_entry) in &mut metadata {
@@ -55,10 +55,10 @@ impl Step<PruneState> for Inventory {
 
                 let (_, primary, other) = file_entry.into_paths(metadata_file.path(), by_hash)?;
 
-                add_valid_metadata_file(&mut progress, &mut state.files, &primary, repo.root_dir.as_str());
+                add_valid_metadata_file(&mut progress, &mut state.files, &primary, repo);
 
                 for f in other {
-                    add_valid_metadata_file(&mut progress, &mut state.files, &f, repo.root_dir.as_str());
+                    add_valid_metadata_file(&mut progress, &mut state.files, &f, repo);
                 }
             }
 
@@ -87,12 +87,7 @@ impl Step<PruneState> for Inventory {
                     MetadataFile::Sources(..) => FilePath::from(""),
                     MetadataFile::SumFile(file_path) |
                     MetadataFile::DiffIndex(file_path) => {
-                        FilePath::from(
-                            file_path.parent()
-                                .expect("diff indicies should have parents")
-                                .strip_prefix(repo.root_dir.as_str())
-                                .expect("metadata paths should be rooted")
-                        )
+                        FilePath::from(repo.strip_root(file_path.parent().expect("diff indicies should have parents")))
                     },
                     MetadataFile::Other(..) => unreachable!()
                 };
@@ -112,8 +107,6 @@ impl Step<PruneState> for Inventory {
                 incremental_size_base += meta_file_size;
             }
         }
-
-        state.total_valid_files += state.files.len() as u64;
         
         progress_bar.finish_using_style();
 
@@ -121,8 +114,8 @@ impl Step<PruneState> for Inventory {
     }
 }
 
-fn add_valid_metadata_file(progress: &mut Progress, files: &mut HashSet<FilePath>, file: &FilePath, root_dir: &str) {
-    let path = file.as_str().strip_prefix(root_dir).expect("path is in root");
+fn add_valid_metadata_file(progress: &mut Progress, files: &mut HashSet<FilePath>, file: &FilePath, repo: &Repository) {
+    let path = repo.strip_root(file.as_str());
 
     add_valid_file(progress, files, path.into());
 }

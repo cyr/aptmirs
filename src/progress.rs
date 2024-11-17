@@ -97,6 +97,23 @@ impl Progress {
             .with_prefix(prefix)
     }
 
+    pub async fn create_unbounded_progress_bar(&self) -> ProgressBar {
+        let prefix = self.create_prefix().await;
+
+        ProgressBar::new(self.files.total())
+            .with_style(
+                ProgressStyle::default_bar()
+                    .template(
+                        "{prefix} [{elapsed_precise}] {pos}/{len} [{msg}]",
+                    )
+                    .expect("template string should follow the syntax")
+                    .progress_chars("###"),
+                    
+            )
+            .with_finish(ProgressFinish::AndLeave)
+            .with_prefix(prefix)
+    }
+
     pub async fn create_count_progress_bar(&self) -> ProgressBar {
         let prefix = self.create_prefix().await;
 
@@ -204,6 +221,10 @@ impl ProgressPart {
 
     pub fn success(&self) -> u64 {
         self.success.load(Ordering::SeqCst)
+    }
+
+    pub fn skipped(&self) -> u64 {
+        self.skipped.load(Ordering::SeqCst)
     }
 
     pub fn remaining(&self) -> u64 {

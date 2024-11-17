@@ -23,15 +23,19 @@ pub enum Cmd {
     /// Verifies the downloaded mirror(s) against the mirror configuration and outputs a report
     Verify,
     /// Removes unreferenced files in the downloaded mirror(s)  
-    Prune
+    Prune { 
+        #[clap(short, long, help = "Prints the files that the prune operation would delete")]
+        dry_run: bool 
+    }
 }
+
 
 impl Display for Cmd {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Cmd::Mirror => f.write_str("Mirroring"),
             Cmd::Verify => f.write_str("Verifying"),
-            Cmd::Prune => f.write_str("Pruning"),
+            Cmd::Prune { .. } => f.write_str("Pruning"),
         }
     }
 }
@@ -43,11 +47,11 @@ impl Cmd {
                 let ctxs = Context::<MirrorState>::create(opts, cli_opts, pgp_key_store)?;
                 self.run_all(ctxs).await;
             },
-            Cmd::Prune => {
-                let ctxs = Context::<PruneState>::create(opts, cli_opts)?;
+            Cmd::Prune { dry_run } => {
+                let ctxs = Context::<PruneState>::create(opts, cli_opts, dry_run)?;
                 self.run_all(ctxs).await;
             },
-            Cmd::Verify => todo!(),
+            Cmd::Verify => unimplemented!(),
         }
 
         Ok(())
