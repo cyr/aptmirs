@@ -127,6 +127,8 @@ async fn download_file<F>(http_client: &Client, download: Box<Download>, mut pro
             let mut response = http_client.get(download.url.as_str()).send().await?;
 
             if response.status() == StatusCode::NOT_FOUND {
+                drop(output);
+                tokio::fs::remove_file(&download.primary_target_path).await?;
                 return Err(MirsError::Download { url: download.url.clone(), status_code: response.status() })
             }
 
