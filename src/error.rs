@@ -37,6 +37,9 @@ pub enum MirsError {
     #[error(transparent)]
     VerifyTaskSend(#[from]SendError<Box<VerifyTask>>),
 
+    #[error("unable to verify {path}")]
+    VerifyTask { path: FilePath },
+
     #[error("url does not point to a valid repository, no release file found")]
     NoReleaseFile,
 

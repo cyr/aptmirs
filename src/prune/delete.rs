@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use ahash::HashSet;
+use ahash::HashMap;
 use async_trait::async_trait;
 use tokio::fs::remove_file;
 use walkdir::WalkDir;
@@ -76,7 +76,7 @@ impl Step<PruneState> for Delete {
     }
 }
 
-fn should_delete(valid_files: &HashSet<FilePath>, entry: &walkdir::DirEntry, path: &str, size: u64) -> Result<bool> {
+fn should_delete(valid_files: &HashMap<FilePath, Option<u64>>, entry: &walkdir::DirEntry, path: &str, size: u64) -> Result<bool> {
     if entry.path_is_symlink() {
         let real_path = std::fs::read_link(entry.path())?;
 
@@ -94,10 +94,18 @@ fn should_delete(valid_files: &HashSet<FilePath>, entry: &walkdir::DirEntry, pat
             }
         }
     }
-    
+
     if size == 0 {
-        return Ok(true)
+        if let Some(expected_size) = valid_files.get(path) {
+            if let Some(expected_size) = expected_size {
+                if *expected_size != 0 {
+                    return Ok(true)
+                }
+            }
+        } else {
+            return Ok(true)
+        }
     }
 
-    Ok(!valid_files.contains(path))
+    Ok(!valid_files.contains_key(path))
 }

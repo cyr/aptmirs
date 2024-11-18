@@ -5,7 +5,7 @@ use thiserror::Error;
 use tokio::sync::Mutex;
 use verify::Verify;
 
-use crate::{cmd::{CmdResult, CmdState}, config::MirrorOpts, context::Context, error::MirsError, metadata::repository::Repository, progress::Progress, step::Step, CliOpts};
+use crate::{cmd::{CmdResult, CmdState}, config::MirrorOpts, context::Context, error::MirsError, metadata::repository::Repository, step::Step, verifier::Verifier, CliOpts};
 use crate::error::Result;
 
 pub type VerifyDynStep = Box<dyn Step<VerifyState, Result = VerifyResult>>;
@@ -28,6 +28,7 @@ pub struct VerifyState {
     pub repo: Arc<Repository>,
     pub opts: Arc<MirrorOpts>,
     pub output: Arc<Mutex<VerifyOutput>>,
+    pub verifier: Verifier,
 }
 
 impl Display for VerifyState {
@@ -83,20 +84,22 @@ impl Context<VerifyState> {
     }
 
     pub fn create(opts: Vec<MirrorOpts>, cli_opts: Arc<CliOpts>) -> Result<Vec<(VerifyContext, Vec<VerifyDynStep>)>> {
+        let verifier = Verifier::build(cli_opts.dl_threads);
+
         opts.into_iter()
             .map(|o| {
                 let repo = Arc::new(Repository::build(&o, &cli_opts)?);
 
                 let steps = Self::create_steps();
-                let progress = Progress::new();
 
                 let state = VerifyState {
                     repo,
                     opts: Arc::new(o),
+                    verifier: verifier.clone(),
                     ..Default::default()
                 };
 
-                Ok((Context::build(state, cli_opts.clone(), progress), steps))
+                Ok((Context::build(state, cli_opts.clone(), verifier.progress()), steps))
             })
             .collect::<Result<Vec<(_, _)>>>()
     }

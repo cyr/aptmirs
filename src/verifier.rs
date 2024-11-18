@@ -4,7 +4,7 @@ use std::sync::Arc;
 use async_channel::{bounded, Sender, Receiver};
 use tokio::{io::AsyncReadExt, task::JoinHandle};
 
-use crate::{error::{MirsError, Result}, metadata::{checksum::Checksum, FilePath}};
+use crate::{error::{MirsError, Result}, metadata::{checksum::Checksum, FilePath, IndexFileEntry}};
 
 use super::progress::Progress;
 
@@ -40,14 +40,18 @@ impl Verifier {
             let handle = tokio::spawn(async move {
                 let mut buf = vec![0u8; 1024*1024];
 
-                while let Ok(dl) = task_receiver.recv().await {
-                    let file_size = dl.size;
+                while let Ok(task) = task_receiver.recv().await {
+                    let file_size = task.size;
 
-                    match verify_file(&mut buf, dl, 
+                    let path = task.paths.first().unwrap().clone();
+                    match verify_file(&mut buf, task, 
                         |downloaded| task_progress.bytes.inc_success(downloaded)
                     ).await {
                         Ok(true) => task_progress.files.inc_success(1),
-                        Ok(false) => task_progress.files.inc_skipped(1),
+                        Ok(false) => {
+                            task_progress.files.inc_failed(1);
+                            eprintln!("checksum failed: {path}");
+                        },
                         Err(e) => {
                             if let MirsError::Download { .. } = e {
                                 if let Some(size) = file_size {
@@ -71,14 +75,14 @@ impl Verifier {
         }
     }
 
-    pub async fn queue(&self, download_entry: Box<VerifyTask>) -> Result<()> {
-        if let Some(size) = download_entry.size {
+    pub async fn queue(&self, verify_task: Box<VerifyTask>) -> Result<()> {
+        if let Some(size) = verify_task.size {
             self.progress.bytes.inc_total(size);
         }
 
         self.progress.files.inc_total(1);
 
-        self.sender.send(download_entry).await?;
+        self.sender.send(verify_task).await?;
 
         Ok(())
     }
@@ -128,3 +132,15 @@ pub struct VerifyTask {
     pub checksum: Checksum,
     pub paths: Vec<FilePath>,
 }
+
+impl TryFrom<IndexFileEntry> for VerifyTask {
+    type Error = MirsError;
+
+    fn try_from(value: IndexFileEntry) -> std::result::Result<Self, Self::Error> {
+        Ok(Self {
+            size: value.size,
+            checksum: value.checksum.ok_or_else(|| MirsError::VerifyTask { path: FilePath(value.path.clone()) })?,
+            paths: vec![FilePath(value.path)],
+        })
+    }
+} 

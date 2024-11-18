@@ -1,6 +1,6 @@
 use std::sync::{atomic::Ordering, Arc};
 
-use ahash::HashSet;
+use ahash::HashMap;
 use async_trait::async_trait;
 use compact_str::format_compact;
 
@@ -47,18 +47,19 @@ impl Step<PruneState> for Inventory {
             let mut metadata: Vec<(MetadataFile, FileEntry)> = release.into_filtered_files(opts).collect();
 
             for f in release_files {
-                add_valid_metadata_file(&mut progress, &mut state.files, &f, repo);
+                add_valid_metadata_file(&mut progress, &mut state.files, &f, None, repo);
             }
 
             for (metadata_file, file_entry) in &mut metadata {
                 metadata_file.prefix_with(dist_root.as_str());
 
+                let size = file_entry.size;
                 let (_, primary, other) = file_entry.into_paths(metadata_file.path(), by_hash)?;
 
-                add_valid_metadata_file(&mut progress, &mut state.files, &primary, repo);
+                add_valid_metadata_file(&mut progress, &mut state.files, &primary, Some(size), repo);
 
                 for f in other {
-                    add_valid_metadata_file(&mut progress, &mut state.files, &f, repo);
+                    add_valid_metadata_file(&mut progress, &mut state.files, &f, Some(size), repo);
                 }
             }
 
@@ -97,7 +98,7 @@ impl Step<PruneState> for Inventory {
 
                     let path = base_path.join(entry.path);
 
-                    add_valid_file(&mut progress, &mut state.files, path);
+                    add_valid_file(&mut progress, &mut state.files, path, entry.size);
 
                     progress.bytes.set_success(counter.load(Ordering::SeqCst) + incremental_size_base);
 
@@ -114,14 +115,14 @@ impl Step<PruneState> for Inventory {
     }
 }
 
-fn add_valid_metadata_file(progress: &mut Progress, files: &mut HashSet<FilePath>, file: &FilePath, repo: &Repository) {
+fn add_valid_metadata_file(progress: &mut Progress, files: &mut HashMap<FilePath, Option<u64>>, file: &FilePath, size: Option<u64>, repo: &Repository) {
     let path = repo.strip_root(file.as_str());
 
-    add_valid_file(progress, files, path.into());
+    add_valid_file(progress, files, path.into(), size);
 }
 
-fn add_valid_file(progress: &mut Progress, files: &mut HashSet<FilePath>, file: FilePath) {
-    if files.insert(file) {
+fn add_valid_file(progress: &mut Progress, files: &mut HashMap<FilePath, Option<u64>>, file: FilePath, size: Option<u64>) {
+    if files.insert(file, size).is_none() {
         progress.files.inc_success(1);
     }
 }

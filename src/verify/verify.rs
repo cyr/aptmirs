@@ -1,10 +1,10 @@
-use std::sync::{atomic::Ordering, Arc};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use compact_str::format_compact;
-use tokio::io::AsyncReadExt;
+use tokio::{runtime::Handle, task::spawn_blocking};
 
-use crate::{context::Context, error::MirsError, metadata::{checksum::Checksum, metadata_file::{deduplicate_metadata, MetadataFile}, release::{FileEntry, Release}, FilePath}, mirror::verify_and_prune, progress::Progress, step::{Step, StepResult}};
+use crate::{context::Context, error::MirsError, metadata::{metadata_file::{deduplicate_metadata, MetadataFile}, release::{FileEntry, Release}, FilePath}, mirror::verify_and_prune, step::{Step, StepResult}, verifier::VerifyTask};
 use crate::error::Result;
 
 use super::{VerifyResult, VerifyState};
@@ -25,12 +25,9 @@ impl Step<VerifyState> for Verify {
 
     async fn execute(&self, ctx: Arc<Context<VerifyState>>) -> Result<StepResult<Self::Result>> {
         let progress = ctx.progress.clone();
-        let mut buf = vec![0u8; 1024*1024];
         let mut output = ctx.state.output.lock().await;
 
         let mut progress_bar = progress.create_count_progress_bar().await;
-
-        let mut incremental_size_base = 0;
 
         let dist_root = FilePath(format_compact!("{}/dists/{}", ctx.state.repo.root_dir, ctx.state.opts.suite));
 
@@ -49,15 +46,14 @@ impl Step<VerifyState> for Verify {
         for (metadata_file, file_entry) in &mut metadata {
             metadata_file.prefix_with(dist_root.as_str());
 
-            let (checksum, primary, other) = file_entry.into_paths(metadata_file.path(), by_hash)?;
+            let size = file_entry.size;
+            let (checksum, primary, ..) = file_entry.into_paths(metadata_file.path(), by_hash)?;
 
-            verify_file(&progress, &mut buf, &primary, &checksum).await?;
-
-            if !matches!(metadata_file, MetadataFile::SumFile(..)) {
-                for f in other {
-                    verify_file(&progress, &mut buf, &f, &checksum).await?;
-                }
-            }
+            ctx.state.verifier.queue(Box::new(VerifyTask {
+                size: Some(size),
+                checksum: checksum.ok_or_else(|| MirsError::VerifyTask { path: primary.clone() })?,
+                paths: vec![primary]
+            })).await?;
         }
 
         let mut metadata = metadata.into_iter()
@@ -75,37 +71,45 @@ impl Step<VerifyState> for Verify {
         
         let total_size = index_files.iter().map(|v| v.size()).sum();
         progress.bytes.inc_total(total_size);
+
+        let task_verifier = ctx.state.verifier.clone();
+        let task_progress = progress.clone();
+        let task_repo = ctx.state.repo.clone();
+        let mut task_progress_bar = progress_bar.clone();
         
-        for meta_file in index_files {
-            let counter = meta_file.counter();
-            let meta_file_size = meta_file.size();
+        spawn_blocking(move || {
+            let async_handle = Handle::current();
 
-            let base_path = match meta_file.file() {
-                MetadataFile::Packages(..) |
-                MetadataFile::Sources(..) => ctx.state.repo.root_dir.clone(),
-                MetadataFile::SumFile(file_path) |
-                MetadataFile::DiffIndex(file_path) => {
-                    FilePath::from(file_path.parent().expect("diff indicies should have parents"))
-                },
-                MetadataFile::Other(..) => unreachable!()
-            };
-            
-            for entry in meta_file {
-                let entry = entry?;
+            for meta_file in index_files {
+                let base_path = match meta_file.file() {
+                    MetadataFile::Packages(..) |
+                    MetadataFile::Sources(..) => task_repo.root_dir.clone(),
+                    MetadataFile::SumFile(file_path) |
+                    MetadataFile::DiffIndex(file_path) => {
+                        FilePath::from(file_path.parent().expect("diff indicies should have parents"))
+                    },
+                    MetadataFile::Other(..) => unreachable!()
+                };
+                
+                for entry in meta_file {
+                    let mut entry = entry?;
 
-                let path = base_path.join(entry.path);
+                    entry.path = base_path.join(&entry.path).0;
 
-                verify_file(&progress, &mut buf, &path, &entry.checksum).await?;
+                    let verify_task = Box::new(VerifyTask::try_from(entry)?);
 
-                progress.bytes.set_success(counter.load(Ordering::SeqCst) + incremental_size_base);
+                    async_handle.block_on(async {
+                        task_verifier.queue(verify_task).await
+                    })?;
 
-                progress.update_for_count(&mut progress_bar);
+                    task_progress.update_for_count(&mut task_progress_bar);
+                }
             }
 
-            incremental_size_base += meta_file_size;
-        }
+            Ok::<(), MirsError>(())
+        }).await??;
         
-        progress_bar.finish_using_style();
+        progress.wait_for_completion(&mut progress_bar).await;
 
         output.total_corrupt = progress.files.failed();
         output.total_missing = progress.files.skipped();
@@ -133,39 +137,4 @@ fn pick_release(files: &[FilePath]) -> Option<&FilePath> {
     }
 
     None
-}
-
-pub async fn verify_file(progress: &Progress, buf: &mut [u8], file: &FilePath, checksum: &Option<Checksum>) -> Result<()> {
-    if !file.exists() {
-        eprintln!("missing: {}", file.as_str());
-        progress.files.inc_skipped(1);
-        return Ok(())
-    }
-
-    let expected_checksum = checksum.as_ref().unwrap();
-
-    let mut hasher = expected_checksum.create_hasher();
-
-    let mut f = tokio::fs::File::open(file).await?;
-
-    loop {
-        match f.read(buf).await {
-            Ok(0) => break,
-            Ok(n) => hasher.consume(&buf[..n]),
-            Err(e) => {
-                return Err(e.into())
-            }
-        }
-    }
-
-    let checksum = hasher.compute();
-
-    if checksum == *expected_checksum {
-        progress.files.inc_success(1);
-    } else {
-        eprintln!("checksum failed: {}", file.as_str());
-        progress.files.inc_failed(1);
-    }
-
-    Ok(())
 }

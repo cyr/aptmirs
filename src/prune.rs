@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, fmt::Display, sync::Arc};
 
-use ahash::HashSet;
+use ahash::HashMap;
 use async_trait::async_trait;
 use compact_str::CompactString;
 use delete::Delete;
@@ -62,7 +62,7 @@ impl Display for PruneState {
 
 #[derive(Default)]
 pub struct PruneOutput {
-    pub files: HashSet<FilePath>, 
+    pub files: HashMap<FilePath, Option<u64>>, 
     pub total_valid: u64,
     pub total_valid_bytes: u64,
     pub total_deleted: u64,
