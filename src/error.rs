@@ -7,7 +7,7 @@ use reqwest::StatusCode;
 use thiserror::Error;
 use tokio::task::JoinError;
 
-use crate::{downloader::Download, metadata::FilePath};
+use crate::{downloader::Download, metadata::FilePath, verifier::VerifyTask};
 
 pub type Result<T> = std::result::Result<T, MirsError>;
 
@@ -33,6 +33,9 @@ pub enum MirsError {
 
     #[error(transparent)]
     Send(#[from]SendError<Box<Download>>),
+
+    #[error(transparent)]
+    VerifyTaskSend(#[from]SendError<Box<VerifyTask>>),
 
     #[error("url does not point to a valid repository, no release file found")]
     NoReleaseFile,

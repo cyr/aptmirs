@@ -1,9 +1,11 @@
 use std::sync::Arc;
 
+use ahash::{HashMap, HashMapExt};
 use async_trait::async_trait;
+use compact_str::CompactString;
 use tokio::{runtime::Handle, task::spawn_blocking};
 
-use crate::{context::Context, error::{MirsError, Result}, metadata::{metadata_file::MetadataFile, FilePath}, step::{Step, StepResult}};
+use crate::{context::Context, error::{MirsError, Result}, metadata::{metadata_file::MetadataFile, FilePath, IndexFileEntry}, step::{Step, StepResult}};
 
 use super::{MirrorResult, MirrorState};
 
@@ -31,33 +33,41 @@ impl Step<MirrorState> for DownloadDebianInstaller {
             ).into_iter()
             .map(MetadataFile::into_reader)
             .collect::<Result<Vec<_>>>()?;
-
-        let mut paths_to_delete = sum_files.iter()
-            .map(|file| {
-                let base = file.file().path().parent()
-                    .expect("there should always be a parent");
-
-                let rel_path = ctx.state.repo.strip_tmp_base(base).expect("sum files should be in tmp");
-
-                ctx.state.repo.rebase_to_root(rel_path)
-            })
-            .collect();
-
+        
         let task_repo = ctx.state.repo.clone();
         let task_downloader = ctx.state.downloader.clone();
-        spawn_blocking(move || {
+        let old_files = spawn_blocking(move || {
             let async_handle = Handle::current();
+            let mut files_to_delete = Vec::new();
 
             for sum_file in sum_files {
+                let rel_path = task_repo.strip_tmp_base(sum_file.file().path()).expect("sum files should be in tmp");
+                let old_path = task_repo.rebase_rel_to_root(&rel_path);
+                let old_base = FilePath::from(old_path.parent().expect("sumfiles should have a parent"));
+
+                let mut old_map = if old_path.exists() {
+                    MetadataFile::SumFile(old_path).into_reader()?
+                        .map(|v| v.unwrap())
+                        .map(|v| (v.path.clone(), v))
+                        .collect::<HashMap<CompactString, IndexFileEntry>>()
+                } else {
+                    HashMap::new()
+                };
+
                 let base_path = sum_file.file().path().parent()
                     .expect("sum files should have a parent");
 
                 let base_path = FilePath::from(base_path);
 
                 for file in sum_file {
-                    
                     let file = file?;
 
+                    if let Some(old_file) = old_map.remove(&file.path) {
+                        if old_file.checksum == file.checksum {
+                            continue
+                        }
+                    }
+ 
                     let new_path = base_path.join(&file.path);
 
                     let new_rel_path = task_repo.strip_tmp_base(&new_path)
@@ -71,14 +81,16 @@ impl Step<MirrorState> for DownloadDebianInstaller {
                         task_downloader.queue(dl).await
                     })?;
                 }
+
+                files_to_delete.extend(old_map.into_keys().into_iter().map(|v| old_base.join(v))); 
             }
-            Ok::<(), MirsError>(())
+            Ok::<Vec<FilePath>, MirsError>(files_to_delete)
         }).await??;
 
         ctx.progress.wait_for_completion(&mut progress_bar).await;
 
         output.total_bytes_downloaded += ctx.progress.bytes.success();
-        output.delete_paths.append(&mut paths_to_delete);
+        output.delete_paths.extend(old_files.into_iter());
 
         Ok(StepResult::Continue)
     }

@@ -141,7 +141,7 @@ impl Repository {
         format_compact!("{}/{}", self.root_url, path)
     }
 
-    pub fn rebase_to_root<P: AsRef<str>>(&self, path: P) -> FilePath {
+    pub fn rebase_rel_to_root<P: AsRef<str>>(&self, path: P) -> FilePath {
         FilePath(format_compact!("{}/{}", self.root_dir, path.as_ref()))
     }
 

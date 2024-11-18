@@ -82,8 +82,8 @@ impl MirrorState {
         let root_dir = self.repo.root_dir.clone();
 
         for path in &output.delete_paths {
-            if tokio::fs::try_exists(path).await? {
-                tokio::fs::remove_dir_all(path).await?;
+            if path.exists() {
+                tokio::fs::remove_file(path).await?;
             }
         }
 

@@ -18,6 +18,7 @@ mod verify;
 mod step;
 mod context;
 mod downloader;
+mod verifier;
 mod progress;
 mod cmd;
 
