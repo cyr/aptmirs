@@ -78,8 +78,20 @@ impl Step<PruneState> for Delete {
 
 fn should_delete(valid_files: &HashSet<FilePath>, entry: &walkdir::DirEntry, path: &str, size: u64) -> Result<bool> {
     if entry.path_is_symlink() {
-        if !std::fs::read_link(entry.path())?.exists() {
-            return Ok(true)
+        let real_path = std::fs::read_link(entry.path())?;
+
+        if real_path.starts_with("/") {
+            if real_path.exists() {
+                return Ok(true)
+            }
+        } else {
+            let joined = entry.path().parent()
+                .expect("all links should point from parent folders")
+                .join(&real_path);
+
+            if !joined.exists() {
+                return Ok(true)
+            }
         }
     }
     
