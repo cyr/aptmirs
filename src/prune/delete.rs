@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
+use ahash::HashSet;
 use async_trait::async_trait;
 use tokio::fs::remove_file;
 use walkdir::WalkDir;
 
-use crate::{context::Context, error::MirsError, step::{Step, StepResult}};
+use crate::{context::Context, error::MirsError, metadata::FilePath, step::{Step, StepResult}};
 use crate::error::Result;
 
 use super::{PruneResult, PruneState};
@@ -47,10 +48,7 @@ impl Step<PruneState> for Delete {
 
             ctx.progress.files.inc_total(1);
 
-            if output.files.contains(path) {
-                ctx.progress.files.inc_skipped(1);
-                ctx.progress.bytes.inc_skipped(size);
-            } else {
+            if should_delete(&output.files, &entry, path, size)? {
                 ctx.progress.files.inc_success(1);
                 ctx.progress.bytes.inc_success(size);
 
@@ -59,6 +57,9 @@ impl Step<PruneState> for Delete {
                 } else {
                     remove_file(repo.root_dir.join(path)).await?;
                 }
+            } else {
+                ctx.progress.files.inc_skipped(1);
+                ctx.progress.bytes.inc_skipped(size);
             }
 
             ctx.progress.update_for_files(&mut progress_bar);
@@ -73,4 +74,18 @@ impl Step<PruneState> for Delete {
 
         Ok(StepResult::Continue)
     }
+}
+
+fn should_delete(valid_files: &HashSet<FilePath>, entry: &walkdir::DirEntry, path: &str, size: u64) -> Result<bool> {
+    if entry.path_is_symlink() {
+        if !std::fs::read_link(entry.path())?.exists() {
+            return Ok(true)
+        }
+    }
+    
+    if size == 0 {
+        return Ok(true)
+    }
+
+    Ok(!valid_files.contains(path))
 }
