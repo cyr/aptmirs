@@ -139,7 +139,7 @@ impl Progress {
 
     pub fn update_for_files(&self, progress_bar: &mut ProgressBar) {
         progress_bar.set_length(self.files.total());
-        progress_bar.set_position(self.files.success());
+        progress_bar.set_position(self.files.total() - self.files.remaining());
         progress_bar.set_message(HumanBytes(self.bytes.success()).to_compact_string());
     }
 
