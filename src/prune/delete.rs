@@ -81,7 +81,7 @@ fn should_delete(valid_files: &HashMap<FilePath, Option<u64>>, entry: &walkdir::
         let real_path = std::fs::read_link(entry.path())?;
 
         if real_path.starts_with("/") {
-            if real_path.exists() {
+            if !real_path.exists() {
                 return Ok(true)
             }
         } else {
