@@ -82,7 +82,7 @@ impl Step<MirrorState> for DownloadDebianInstaller {
                     })?;
                 }
 
-                files_to_delete.extend(old_map.into_keys().into_iter().map(|v| old_base.join(v))); 
+                files_to_delete.extend(old_map.into_keys().map(|v| old_base.join(v))); 
             }
             Ok::<Vec<FilePath>, MirsError>(files_to_delete)
         }).await??;
