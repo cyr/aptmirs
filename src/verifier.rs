@@ -1,8 +1,9 @@
 
 use std::sync::Arc;
 
+use ahash::{HashSet, HashSetExt};
 use async_channel::{bounded, Sender, Receiver};
-use tokio::{io::AsyncReadExt, task::JoinHandle};
+use tokio::{io::AsyncReadExt, sync::Mutex, task::JoinHandle};
 
 use crate::{error::{MirsError, Result}, metadata::{checksum::Checksum, FilePath, IndexFileEntry}};
 
@@ -10,9 +11,10 @@ use super::progress::Progress;
 
 #[derive(Clone)]
 pub struct Verifier {
-    sender: Sender<Box<VerifyTask>>,
+    sender: Sender<Arc<VerifyTask>>,
     _tasks: Arc<Vec<JoinHandle<()>>>,
-    progress: Progress
+    progress: Progress,
+    verified_set: Arc<Mutex<HashSet<FilePath>>>,
 }
 
 impl Default for Verifier {
@@ -21,7 +23,8 @@ impl Default for Verifier {
         Self {
             sender,
             _tasks: Default::default(),
-            progress: Default::default()
+            progress: Default::default(),
+            verified_set: Default::default()
         }
     }
 }
@@ -33,8 +36,10 @@ impl Verifier {
         let mut tasks = Vec::with_capacity(num_threads as usize);
         let progress = Progress::new();
 
+        let verified_set = Arc::new(Mutex::new(HashSet::new()));
+
         for _ in 0..num_threads {
-            let task_receiver: Receiver<Box<VerifyTask>> = receiver.clone();
+            let task_receiver: Receiver<Arc<VerifyTask>> = receiver.clone();
             let task_progress = progress.clone();
 
             let handle = tokio::spawn(async move {
@@ -43,14 +48,13 @@ impl Verifier {
                 while let Ok(task) = task_receiver.recv().await {
                     let file_size = task.size;
 
-                    let path = task.paths.first().unwrap().clone();
-                    match verify_file(&mut buf, task, 
+                    match verify_file(&mut buf, task.clone(), 
                         |downloaded| task_progress.bytes.inc_success(downloaded)
                     ).await {
                         Ok(true) => task_progress.files.inc_success(1),
                         Ok(false) => {
                             task_progress.files.inc_failed(1);
-                            eprintln!("checksum failed: {path}");
+                            eprintln!("checksum failed: {}", task.paths.first().unwrap());
                         },
                         Err(e) => {
                             if let MirsError::Download { .. } = e {
@@ -71,11 +75,24 @@ impl Verifier {
         Self {
             sender,
             _tasks: Arc::new(tasks),
-            progress
+            progress,
+            verified_set
         }
     }
 
-    pub async fn queue(&self, verify_task: Box<VerifyTask>) -> Result<()> {
+    pub async fn queue(&self, verify_task: Arc<VerifyTask>) -> Result<()> {
+        {
+            let path = verify_task.paths.first().unwrap();
+
+            let mut verified_set = self.verified_set.lock().await;
+
+            if verified_set.contains(path) {
+                return Ok(())
+            } else {
+                verified_set.insert(path.clone());
+            }
+        }
+
         if let Some(size) = verify_task.size {
             self.progress.bytes.inc_total(size);
         }
@@ -92,7 +109,7 @@ impl Verifier {
     }
 }
 
-async fn verify_file<F>(buf: &mut [u8], verify_task: Box<VerifyTask>, mut progress_cb: F) -> Result<bool>
+async fn verify_file<F>(buf: &mut [u8], verify_task: Arc<VerifyTask>, mut progress_cb: F) -> Result<bool>
     where F: FnMut(u64) {
     
     for path in &verify_task.paths {

@@ -1,4 +1,4 @@
-use std::num::ParseIntError;
+use std::{num::ParseIntError, sync::Arc};
 
 use async_channel::SendError;
 use compact_str::CompactString;
@@ -35,7 +35,7 @@ pub enum MirsError {
     Send(#[from]SendError<Box<Download>>),
 
     #[error(transparent)]
-    VerifyTaskSend(#[from]SendError<Box<VerifyTask>>),
+    VerifyTaskSend(#[from]SendError<Arc<VerifyTask>>),
 
     #[error("unable to verify {path}")]
     VerifyTask { path: FilePath },

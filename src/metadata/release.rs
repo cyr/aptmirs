@@ -224,7 +224,7 @@ impl<'a> ReleaseFileIterator<'a> {
     }
 }
 
-impl<'a> Iterator for ReleaseFileIterator<'a> {
+impl Iterator for ReleaseFileIterator<'_> {
     type Item = (MetadataFile, FileEntry);
 
     fn next(&mut self) -> Option<Self::Item> {

@@ -49,7 +49,7 @@ impl Step<VerifyState> for Verify {
             let size = file_entry.size;
             let (checksum, primary, ..) = file_entry.into_paths(metadata_file.path(), by_hash)?;
 
-            ctx.state.verifier.queue(Box::new(VerifyTask {
+            ctx.state.verifier.queue(Arc::new(VerifyTask {
                 size: Some(size),
                 checksum: checksum.ok_or_else(|| MirsError::VerifyTask { path: primary.clone() })?,
                 paths: vec![primary]
@@ -96,7 +96,7 @@ impl Step<VerifyState> for Verify {
 
                     entry.path = base_path.join(&entry.path).0;
 
-                    let verify_task = Box::new(VerifyTask::try_from(entry)?);
+                    let verify_task = Arc::new(VerifyTask::try_from(entry)?);
 
                     async_handle.block_on(async {
                         task_verifier.queue(verify_task).await
