@@ -45,23 +45,7 @@ impl Downloader {
 
             let handle = tokio::spawn(async move {
                 while let Ok(dl) = task_receiver.recv().await {
-                    let file_size = dl.size;
-
-                    match download_file(&task_http_client, dl, 
-                        |downloaded| task_progress.bytes.inc_success(downloaded)
-                    ).await {
-                        Ok(true) => task_progress.files.inc_success(1),
-                        Ok(false) => task_progress.files.inc_skipped(1),
-                        Err(e) => {
-                            if let MirsError::Download { .. } = e {
-                                if let Some(size) = file_size {
-                                    task_progress.bytes.inc_skipped(size);
-                                }
-                            }
-    
-                            task_progress.files.inc_skipped(1);
-                        }
-                    }
+                    _ = Downloader::download_and_track(&task_http_client, task_progress.clone(), dl).await;
                 }
             });
 
@@ -88,24 +72,34 @@ impl Downloader {
         Ok(())
     }
 
-    pub async fn download(&self, download: Box<Download>) -> Result<()> {
-        match download_file(&self.http_client, download, |bytes| {
-            self.progress.bytes.inc_success(bytes)
-        }).await {
-            Ok(downloaded) => {
-                if downloaded {
-                    self.progress.files.inc_success(1);
-                } else {
-                    self.progress.files.inc_skipped(1);
-                }
-            },
-            Err(e) => {
-                self.progress.files.inc_skipped(1);
-                return Err(e)
-            },
-        }
+    async fn download_and_track(http_client: &Client, progress: Progress, dl: Box<Download>) -> Result<()> {
+        let file_size = dl.size;
         
+        match download_file(http_client, dl, 
+            |downloaded| progress.bytes.inc_success(downloaded)
+        ).await {
+            Ok(true) => progress.files.inc_success(1),
+            Ok(false) => progress.files.inc_skipped(1),
+            Err(e) => {
+                match e {
+                    MirsError::Checksum { .. } => progress.files.inc_failed(1),
+                    MirsError::Download { .. } => {
+                        if let Some(size) = file_size {
+                            progress.bytes.inc_skipped(size);
+                        }
+
+                        progress.files.inc_skipped(1);
+                    },
+                    _ => progress.files.inc_skipped(1),
+                }
+            }
+        }
+
         Ok(())
+    }
+
+    pub async fn download(&self, download: Box<Download>) -> Result<()> {
+        Downloader::download_and_track(&self.http_client, self.progress.clone(), download).await
     }
 
     pub fn progress(&self) -> Progress {
