@@ -133,6 +133,6 @@ pub enum MirsError {
     #[error("non-index file can't be made into readers")]
     NonIndexFileBuild { path: FilePath },
 
-    #[error("repository is an inconsistent state")]
+    #[error("repository is in an inconsistent state")]
     InconsistentRepository
 }
