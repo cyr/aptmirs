@@ -29,7 +29,7 @@ impl Step<VerifyState> for Verify {
 
         let mut progress_bar = progress.create_download_progress_bar().await;
 
-        let dist_root = FilePath(format_compact!("{}/dists/{}", ctx.state.repo.root_dir, ctx.state.opts.suite));
+        let dist_root = FilePath(format_compact!("{}/{}", ctx.state.repo.root_dir, ctx.state.opts.dist_part()));
 
         let release_files = get_rooted_release_files(&dist_root);
 

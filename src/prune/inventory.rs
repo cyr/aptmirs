@@ -32,7 +32,7 @@ impl Step<PruneState> for Inventory {
         let mut incremental_size_base = 0;
 
         for (opts, repo) in &ctx.state.mirrors {
-            let dist_root = FilePath(format_compact!("{}/dists/{}", repo.root_dir, opts.suite));
+            let dist_root = FilePath(format_compact!("{}/{}", repo.root_dir, opts.dist_part()));
 
             let release_files = get_rooted_release_files(&dist_root);
 

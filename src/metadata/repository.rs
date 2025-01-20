@@ -22,7 +22,7 @@ impl Repository {
             None => mirror_opts.url.clone(),
         };
 
-        let dist_url = format_compact!("{root_url}/dists/{}", mirror_opts.suite);
+        let dist_url = format_compact!("{root_url}/{}", mirror_opts.dist_part());
 
         let parsed_url = Url::parse(&root_url)
             .map_err(|_| MirsError::UrlParsing { url: root_url.clone() })?;
@@ -51,7 +51,7 @@ impl Repository {
             None => mirror_opts.url.clone(),
         };
 
-        let dist_url = format_compact!("{root_url}/dists/{}", mirror_opts.suite);
+        let dist_url = format_compact!("{root_url}/{}", mirror_opts.dist_part());
 
         let parsed_url = Url::parse(&root_url)
             .map_err(|_| MirsError::UrlParsing { url: root_url.clone() })?;

@@ -21,13 +21,17 @@ pub async fn read_config(path: &FilePath) -> Result<Vec<MirrorOpts>> {
 
         line_num += 1;
 
-        let line = match reader.read_line(&mut buf).await {
+        let mut line = match reader.read_line(&mut buf).await {
             Ok(0) => break,
             Ok(len) => (buf[..len]).trim(),
             Err(e) => return Err(e.into()),
         };
 
-        if line.is_empty() || line.starts_with('#') {
+        if let Some(pos) = line.find('#') {
+            line = &line[..pos];
+        }
+
+        if line.is_empty() {
             continue
         }
 
@@ -195,16 +199,16 @@ impl MirrorOpts {
             return Err(MirsError::Config { msg: CompactString::const_new("no suite specified") })
         };
 
-        let components = line_parts
+        let mut components = line_parts
             .map(|v| v.to_compact_string())
             .collect::<Vec<_>>();
 
         if components.is_empty() {
-            return Err(MirsError::Config { msg: CompactString::const_new("no components specified") })
+            components.push(CompactString::const_new("main"));
         }
 
         if arch.is_empty() {
-            arch.push("amd64".to_compact_string())
+            arch.push(CompactString::const_new("amd64"))
         }
 
         Ok(Self {
@@ -223,5 +227,17 @@ impl MirrorOpts {
 
     pub fn debian_installer(&self) -> bool {
         !self.debian_installer_arch.is_empty()
+    }
+
+    pub fn flat(&self) -> bool {
+        self.suite == "/"
+    }
+
+    pub fn dist_part(&self) -> CompactString {
+        if self.flat() {
+            CompactString::with_capacity(0)
+        } else {
+            format_compact!("dists/{}", self.suite)
+        }
     }
 }
