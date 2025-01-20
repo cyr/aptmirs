@@ -242,6 +242,12 @@ impl Iterator for ReleaseFileIterator<'_> {
                     let component = component.to_str()
                         .expect("path should be utf8");
 
+                    if parts.peek().is_none() {
+                        if self.file_prefix_filter.iter().any(|v| component.starts_with(v.as_str())) {
+                            return Some((path.into(), file_entry))
+                        }
+                    }
+                    
                     if !self.opts.components.iter().any(|v| v.as_str() == component) {
                         continue
                     }

@@ -1,4 +1,4 @@
-use std::cmp::Ordering;
+use std::{cmp::Ordering, fmt::Display};
 use compact_str::{format_compact, CompactString, ToCompactString};
 use tokio::io::{BufReader, AsyncBufReadExt};
 
@@ -238,6 +238,33 @@ impl MirrorOpts {
             CompactString::with_capacity(0)
         } else {
             format_compact!("dists/{}", self.suite)
+        }
+    }
+}
+
+impl Display for MirrorOpts {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.packages && self.source {
+            f.write_str("deb+deb-src")?
+        } else if self.packages {
+            f.write_str("deb")?
+        } else if self.source {
+            f.write_str("deb-src")?
+        }
+
+        if self.flat() {
+            f.write_fmt(format_args!(
+                " {} (flat)",
+                self.url
+            ))
+        } else {
+            f.write_fmt(format_args!(
+                " {} {}[{}] {}",
+                self.url,
+                self.suite,
+                self.arch.join(", "),
+                self.components.join(" ")
+            ))
         }
     }
 }

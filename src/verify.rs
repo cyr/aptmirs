@@ -33,21 +33,7 @@ pub struct VerifyState {
 
 impl Display for VerifyState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.opts.packages && self.opts.source {
-            f.write_str("deb+deb-src")?
-        } else if self.opts.packages {
-            f.write_str("deb")?
-        } else if self.opts.source {
-            f.write_str("deb-src")?
-        }
-
-        f.write_fmt(format_args!(
-            " {} {}[{}] {}",
-            self.opts.url,
-            self.opts.suite,
-            self.opts.arch.join(", "),
-            self.opts.components.join(" ")
-        ))
+        self.opts.fmt(f)
     }
 }
 #[derive(Default)]
