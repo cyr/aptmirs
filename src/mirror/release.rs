@@ -98,7 +98,9 @@ impl Step<MirrorState> for DownloadRelease {
         }
         
         if let Some(release_components) = release.components() {
-            let components = release_components.split_ascii_whitespace().collect::<Vec<&str>>();
+            let components = release_components.split_ascii_whitespace()
+                .map(|v| v.split('/').last().expect("last should always exist here"))
+                .collect::<Vec<&str>>();
 
             for requested_component in &ctx.state.opts.components {
                 if !components.contains(&requested_component.as_str()) {
