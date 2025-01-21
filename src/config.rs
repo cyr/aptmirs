@@ -199,8 +199,11 @@ impl MirrorOpts {
             return Err(MirsError::Config { msg: CompactString::const_new("no suite specified") })
         };
 
+        // we split off the path of the component name because they are not used in the release file,
+        // and might be a holdover fror older repository structures. debian-security uses this and the path
+        // is just symlinked back to the repository root. should we support this? maybe, but probably not.
         let mut components = line_parts
-            .map(|v| v.to_compact_string())
+            .map(|v| v.split('/').last().expect("last should always exist here").to_compact_string())
             .collect::<Vec<_>>();
 
         if components.is_empty() {
