@@ -1,4 +1,4 @@
-use std::{fmt::Display, sync::Arc};
+use std::{fmt::Display, process::exit, sync::Arc};
 
 use clap::{command, arg, Parser};
 use cmd::Cmd;
@@ -34,7 +34,8 @@ async fn main() -> Result<()> {
     };
 
     if let Err(e) = result {
-        println!("FATAL: {e}")
+        println!("FATAL: {e}");
+        exit(-1)
     }
 
     Ok(())
