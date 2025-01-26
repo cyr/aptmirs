@@ -70,12 +70,10 @@ impl Cmd {
             ctx.next_step(step.step_name()).await;
     
             match step.execute(ctx.clone()).await {
-                Ok(result) => match result {
-                    StepResult::Continue => (),
-                    StepResult::End(result) => {
-                        return ctx.state.finalize_with_result(result).await
-                    },
-                }
+                Ok(StepResult::Continue) => (),
+                Ok(StepResult::End(result)) => {
+                    return ctx.state.finalize_with_result(result).await
+                },
                 Err(e) => {
                     return ctx.state.finalize_with_result(step.error(e)).await
                 },
