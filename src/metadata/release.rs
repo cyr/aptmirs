@@ -146,6 +146,79 @@ impl Release {
     }
 }
 
+pub struct ReleaseFileFilter {
+    file_prefix_filter: Vec<CompactString>,
+    dir_filter: BTreeSet<CompactString>
+}
+
+impl ReleaseFileFilter {
+    pub fn new(opts: &MirrorOpts) -> Self {
+        let mut file_prefix_filter = Vec::new();
+        let mut dir_filter = BTreeSet::new();
+
+        file_prefix_filter.push(CompactString::const_new("Release"));
+
+        if opts.source {
+            file_prefix_filter.push(CompactString::const_new("Sources"));
+
+            dir_filter.insert(CompactString::const_new("source"));
+        }
+
+        if opts.packages {
+            file_prefix_filter.push(CompactString::const_new("Contents-all"));
+            file_prefix_filter.push(CompactString::const_new("Components-all"));
+            file_prefix_filter.push(CompactString::const_new("Commands-all"));
+            file_prefix_filter.push(CompactString::const_new("Packages"));
+            file_prefix_filter.push(CompactString::const_new("icons"));
+            file_prefix_filter.push(CompactString::const_new("Translation"));
+            file_prefix_filter.push(CompactString::const_new("Index"));
+            
+            dir_filter.insert(CompactString::const_new("dep11"));
+            dir_filter.insert(CompactString::const_new("i18n"));
+            dir_filter.insert(CompactString::const_new("binary-all"));
+            dir_filter.insert(CompactString::const_new("cnf"));
+            dir_filter.insert(CompactString::const_new("Contents-all.diff"));
+            dir_filter.insert(CompactString::const_new("Packages.diff"));
+
+            if opts.udeb {
+                file_prefix_filter.push(CompactString::const_new("Contents-udeb-all"));
+                dir_filter.insert(CompactString::const_new("debian-installer"));
+            }
+
+            for arch in &opts.arch {
+                dir_filter.insert(format_compact!("binary-{arch}"));
+                dir_filter.insert(format_compact!("Contents-{arch}.diff"));
+
+                file_prefix_filter.push(format_compact!("Components-{arch}"));
+                file_prefix_filter.push(format_compact!("Contents-{arch}"));
+                file_prefix_filter.push(format_compact!("Commands-{arch}"));
+
+                if opts.udeb {
+                    file_prefix_filter.push(format_compact!("Contents-udeb-{arch}"));
+                }
+            }
+
+            if !opts.debian_installer_arch.is_empty() {
+                file_prefix_filter.push(CompactString::const_new("MD5SUMS"));
+                file_prefix_filter.push(CompactString::const_new("SHA256SUMS"));
+                file_prefix_filter.push(CompactString::const_new("SHA512SUMS"));
+
+                dir_filter.insert(CompactString::const_new("current"));
+                dir_filter.insert(CompactString::const_new("images"));
+
+                for di_arch in &opts.debian_installer_arch {
+                    dir_filter.insert(format_compact!("installer-{di_arch}"));
+                }
+            }
+        }
+
+        Self {
+            file_prefix_filter,
+            dir_filter,
+        }
+    }
+}
+
 pub struct ReleaseFileIterator<'a> {
     release: Release,
     opts: &'a MirrorOpts,
@@ -221,6 +294,48 @@ impl<'a> ReleaseFileIterator<'a> {
             file_prefix_filter,
             dir_filter
         }
+    }
+
+    pub fn accept(&self, path: &str) -> bool {
+        let p = Path::new(&path);
+
+        let mut parts = p.components().peekable();
+
+        let Some(Component::Normal(component)) = parts.next() else {
+            return false
+        };
+        
+        let component = component.to_str()
+            .expect("path should be utf8");
+
+        if parts.peek().is_none() {
+            if self.file_prefix_filter.iter().any(|v| component.starts_with(v.as_str())) {
+                return true
+            }
+        }
+        
+        if !self.opts.components.iter().any(|v| v.as_str() == component) {
+            return false
+        }
+
+        while let Some(Component::Normal(part)) = parts.next() {
+            let part_name = part.to_str()
+                .expect("path should be utf8");
+
+            if parts.peek().is_none() {
+                if self.file_prefix_filter.iter().any(|v| part_name.starts_with(v.as_str())) {
+                    return true
+                }
+
+                break
+            }
+
+            if !self.dir_filter.contains(part_name) {
+                return false
+            }
+        }
+
+        false
     }
 }
 
