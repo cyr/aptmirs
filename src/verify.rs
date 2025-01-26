@@ -3,7 +3,7 @@ use std::{fmt::Display, sync::Arc};
 use async_trait::async_trait;
 use thiserror::Error;
 use tokio::sync::Mutex;
-use verify::Verify;
+use verification::Verify;
 
 use crate::{cmd::{CmdResult, CmdState}, config::MirrorOpts, context::Context, error::MirsError, metadata::repository::Repository, step::Step, verifier::Verifier, CliOpts};
 use crate::error::Result;
@@ -11,7 +11,7 @@ use crate::error::Result;
 pub type VerifyDynStep = Box<dyn Step<VerifyState, Result = VerifyResult>>;
 pub type VerifyContext = Arc<Context<VerifyState>>;
 
-pub mod verify;
+pub mod verification;
 
 #[derive(Error, Debug)]
 pub enum VerifyResult {
