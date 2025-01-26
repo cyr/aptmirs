@@ -37,11 +37,11 @@ impl Step<VerifyState> for Verify {
             return Err(MirsError::NoReleaseFile)
         };
 
-        let release = Release::parse(release_file).await?;
+        let release = Release::parse(release_file, &ctx.state.opts).await?;
 
         let by_hash = release.acquire_by_hash();
 
-        let mut metadata: Vec<(MetadataFile, FileEntry)> = release.into_filtered_files(&ctx.state.opts).collect();
+        let mut metadata: Vec<(MetadataFile, FileEntry)> = release.into_iter().collect();
 
         for (metadata_file, file_entry) in &mut metadata {
             metadata_file.prefix_with(dist_root.as_str());

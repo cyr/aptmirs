@@ -35,7 +35,7 @@ impl Step<MirrorState> for DownloadMetadata {
 
         let mut metadata = Vec::new();
 
-        for (mut file, file_entry) in release.into_filtered_files(&ctx.state.opts.clone()) {
+        for (mut file, file_entry) in release.into_iter() {
             let mut add_by_hash = by_hash;
             let url = ctx.state.repo.to_url_in_dist(file.as_ref());
 

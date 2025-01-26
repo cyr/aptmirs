@@ -80,7 +80,7 @@ impl Step<MirrorState> for DownloadRelease {
                 }
 
                 Some(
-                    Release::parse(&local_release_file).await
+                    Release::parse(&local_release_file, &ctx.state.opts).await
                         .map_err(|e| MirsError::InvalidReleaseFile { inner: Box::new(e) })?
                 )
             } else {
@@ -90,7 +90,7 @@ impl Step<MirrorState> for DownloadRelease {
             None
         };
 
-        let mut release = Release::parse(release_file).await
+        let mut release = Release::parse(release_file, &ctx.state.opts).await
             .map_err(|e| MirsError::InvalidReleaseFile { inner: Box::new(e) })?;
 
         if let Some(old_release) = old_release {

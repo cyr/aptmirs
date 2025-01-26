@@ -3,7 +3,7 @@ use std::{path::{Path, Component}, collections::{BTreeMap, BTreeSet}};
 use compact_str::{format_compact, CompactString, ToCompactString};
 use tokio::{fs::File, io::{BufReader, AsyncBufReadExt}};
 
-use crate::{error::{Result, MirsError}, config::MirrorOpts};
+use crate::{config::MirrorOpts, error::{MirsError, Result}};
 
 use super::{checksum::Checksum, metadata_file::MetadataFile, FilePath};
 
@@ -14,7 +14,7 @@ pub struct Release {
 }
 
 impl Release {
-    pub async fn parse(path: &FilePath) -> Result<Release> {
+    pub async fn parse(path: &FilePath, mirror_opts: &MirrorOpts) -> Result<Release> {
         let file = File::open(path).await?;
         let file_size = file.metadata().await?.len();
 
@@ -28,6 +28,8 @@ impl Release {
 
         let mut map = BTreeMap::new();
         let mut files = BTreeMap::<CompactString, FileEntry>::new();
+
+        let file_filter = ReleaseFileFilter::new(mirror_opts);
 
         loop {
             buf.clear();
@@ -43,6 +45,10 @@ impl Release {
             match line {
                 Line::FileEntry(v) => {
                     let file_line = FileLine::parse(v)?;
+
+                    if !file_filter.accept(file_line.path) {
+                        continue
+                    }
 
                     if !files.contains_key(file_line.path) {
                         files.insert(file_line.path.to_compact_string(), 
@@ -127,8 +133,8 @@ impl Release {
         self.map.get("Components")
     }
 
-    pub fn into_filtered_files(self, opts: &MirrorOpts) -> ReleaseFileIterator {
-        ReleaseFileIterator::new(self, opts)
+    pub fn into_iter(self) -> ReleaseFileIterator {
+        ReleaseFileIterator::new(self)
     }
 
     pub fn deduplicate(&mut self, mut old_release: Release) {
@@ -264,17 +270,13 @@ impl ReleaseFileFilter {
 }
 
 pub struct ReleaseFileIterator {
-    release: Release,
-    filter: ReleaseFileFilter
+    release: Release
 }
 
 impl ReleaseFileIterator {
-    pub fn new(release: Release, opts: &MirrorOpts) -> Self {
-        let filter = ReleaseFileFilter::new(opts);
-
+    pub fn new(release: Release) -> Self {
         Self {
-            release,
-            filter
+            release
         }
     }
 }
@@ -286,9 +288,7 @@ impl Iterator for ReleaseFileIterator {
         loop {
             match self.release.files.pop_first() {
                 Some((path, file_entry)) => {
-                    if self.filter.accept(&path) {
-                        return Some((path.into(), file_entry))
-                    }
+                    return Some((path.into(), file_entry))
                 },
                 None => return None
             }

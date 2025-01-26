@@ -40,11 +40,11 @@ impl Step<PruneState> for Inventory {
                 return Err(MirsError::NoReleaseFile)
             };
 
-            let release = Release::parse(release_file).await?;
+            let release = Release::parse(release_file, &opts).await?;
 
             let by_hash = release.acquire_by_hash();
 
-            let mut metadata: Vec<(MetadataFile, FileEntry)> = release.into_filtered_files(opts).collect();
+            let mut metadata: Vec<(MetadataFile, FileEntry)> = release.into_iter().collect();
 
             for f in release_files {
                 add_valid_metadata_file(&mut progress, &mut state.files, &f, None, repo);
