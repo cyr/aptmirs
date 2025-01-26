@@ -285,14 +285,7 @@ impl Iterator for ReleaseFileIterator {
     type Item = (MetadataFile, FileEntry);
 
     fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            match self.release.files.pop_first() {
-                Some((path, file_entry)) => {
-                    return Some((path.into(), file_entry))
-                },
-                None => return None
-            }
-        }
+        self.release.files.pop_first().map(|(path, file_entry)| (path.into(), file_entry)) 
     }
 }
 

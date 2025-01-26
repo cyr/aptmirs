@@ -40,7 +40,7 @@ impl Step<PruneState> for Inventory {
                 return Err(MirsError::NoReleaseFile)
             };
 
-            let release = Release::parse(release_file, &opts).await?;
+            let release = Release::parse(release_file, opts).await?;
 
             let by_hash = release.acquire_by_hash();
 
