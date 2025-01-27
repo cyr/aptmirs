@@ -231,6 +231,7 @@ impl ReleaseFileFilter {
 
         let mut parts = p.components().peekable();
 
+        // first part of the path should be a component, but this is not true for flat repositories, so we want to check that too
         let Some(Component::Normal(component)) = parts.next() else {
             return false
         };
@@ -238,11 +239,12 @@ impl ReleaseFileFilter {
         let component = component.to_str()
             .expect("path should be utf8");
 
+        // file in root that matches filter - most likely from a flat repository
         if parts.peek().is_none() && self.file_prefix_filter.iter().any(|v| component.starts_with(v.as_str())) {
-            // file in root that matches filter - most likely from a flat repository
             return true
         }
         
+        // for non-flat repositories, let's check if this is a component we are interested in
         if !self.components.iter().any(|v| v.as_str() == component) {
             return false
         }
