@@ -92,15 +92,13 @@ impl Checksum {
         }
     }
 
-    pub async fn checksum_file(file: &FilePath) -> Result<Checksum> {
+    pub async fn checksum_file_with_hasher(file: &FilePath, mut hasher: Box<dyn Hasher>) -> Result<Checksum> {
         let mut f = tokio::fs::File::open(file).await?;
         
         let mut buf = vec![0_u8; 8192];
 
-        let mut hasher = Box::new(Sha512Hasher::new());
-
         loop {
-            match f.read_buf(&mut buf).await {
+            match f.read(&mut buf).await {
                 Ok(0) => break,
                 Ok(n) => hasher.consume(&buf[..n]),
                 Err(e) => return Err(e.into())

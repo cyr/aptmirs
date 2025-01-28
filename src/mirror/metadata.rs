@@ -56,7 +56,7 @@ impl Step<MirrorState> for DownloadMetadata {
                     if file_path_in_root.exists() && !ctx.cli_opts.force {
                         continue
                     }
-                } else if (!by_hash || checksum_path.exists()) && file_path_in_root.exists() && !ctx.cli_opts.force {
+                } else if (checksum_path.exists()) && file_path_in_root.exists() && !ctx.cli_opts.force {
                     continue
                 }
             }

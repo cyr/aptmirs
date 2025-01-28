@@ -137,18 +137,31 @@ impl Release {
         ReleaseFileIterator::new(self)
     }
 
-    pub fn deduplicate(&mut self, mut old_release: Release) {
-        let mut filtered_files = BTreeMap::new();
-        
+    pub async fn prune_existing(&mut self, root_path: &str) -> Result<()> {
+        let mut pruned = BTreeMap::new();
+        let root = FilePath::from(root_path);
+
         while let Some((path, entry)) = self.files.pop_first() {
-            if let Some(old_entry) = old_release.files.remove(&path) {
-                if entry != old_entry {
-                    filtered_files.insert(path, entry);
+            let old_path = root.join(&path);
+
+            if old_path.exists() {
+                if let Some(referenced_checksum) = entry.strongest_hash() {
+                    let hasher = referenced_checksum.create_hasher();
+
+                    let existing_checksum = Checksum::checksum_file_with_hasher(&old_path, hasher).await?;
+
+                    if existing_checksum != referenced_checksum {
+                        pruned.insert(path, entry);
+                    }
                 }
+            } else {
+                pruned.insert(path, entry);
             }
         }
 
-        self.files = filtered_files;
+        self.files = pruned;
+
+        Ok(())
     }
 }
 

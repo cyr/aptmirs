@@ -144,12 +144,7 @@ impl Repository {
     pub fn rebase_rel_to_root<P: AsRef<str>>(&self, path: P) -> FilePath {
         FilePath(format_compact!("{}/{}", self.root_dir, path.as_ref()))
     }
-
-    pub fn tmp_to_root<P: AsRef<str>>(&self, path: P) -> Option<FilePath> {
-        path.as_ref().strip_prefix(self.tmp_dir.as_str())
-            .map(|v| self.root_dir.join(v))
-    }
-
+    
     pub fn strip_tmp_base<P: AsRef<str>>(&self, path: P) -> Option<FilePath> {
         path.as_ref().strip_prefix(self.tmp_dir.as_str())
             .map(|v| v.strip_prefix('/').expect("Paths that strip tmp base should always start with / here"))

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::{context::Context, downloader::Download, error::{MirsError, Result}, log, metadata::{checksum::Checksum, release::Release, FilePath}, mirror::MirrorResult, pgp::verify_release_signature, step::{Step, StepResult}};
+use crate::{context::Context, downloader::Download, error::{MirsError, Result}, log, metadata::{release::Release, FilePath}, mirror::MirrorResult, pgp::verify_release_signature, step::{Step, StepResult}};
 
 use super::MirrorState;
 
@@ -67,36 +67,19 @@ impl Step<MirrorState> for DownloadRelease {
             return Err(MirsError::NoReleaseFile)
         };
 
-        // if the release file we already have has the same checksum as the one we downloaded, because
-        // of how all metadata files are moved into the repository path after the mirroring operation
-        // is completed successfully, there should be nothing more to do. save bandwidth, save lives!
-        let old_release = if let Some(local_release_file) = ctx.state.repo.tmp_to_root(release_file) {
-            if !ctx.cli_opts.force && local_release_file.exists() {
-                let tmp_checksum = Checksum::checksum_file(&local_release_file).await?;
-                let local_checksum = Checksum::checksum_file(release_file).await?;
-
-                if tmp_checksum == local_checksum {
-                    return Ok(StepResult::End(MirrorResult::ReleaseUnchanged))
-                }
-
-                Some(
-                    Release::parse(&local_release_file, &ctx.state.opts).await
-                        .map_err(|e| MirsError::InvalidReleaseFile { inner: Box::new(e) })?
-                )
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
         let mut release = Release::parse(release_file, &ctx.state.opts).await
             .map_err(|e| MirsError::InvalidReleaseFile { inner: Box::new(e) })?;
 
-        if let Some(old_release) = old_release {
-            release.deduplicate(old_release);
-        }
+        // we prune all the metadata files that this release references that we already have, by comparing the actual checksum.
+        // this way, we will attempt to redownload missing files as well as files that are there as a result of a previous 
+        // sync, where a later release had that file referenced, but wasn't available at the time of mirroring. if all the
+        // files are okay, then there is nothing more to do!
+        release.prune_existing(ctx.state.repo.root_dir.as_str()).await?;
         
+        if release.files.is_empty() {
+            return Ok(StepResult::End(MirrorResult::ReleaseUnchanged))
+        }
+
         if let Some(release_components) = release.components() {
             let components = release_components.split_ascii_whitespace()
                 .map(|v| v.split('/').last().expect("last should always exist here"))
