@@ -92,6 +92,10 @@ impl Checksum {
         }
     }
 
+    pub async fn checksum_file(file: &FilePath) -> Result<Checksum> {
+        Self::checksum_file_with_hasher(file, Box::new(Sha512Hasher::new())).await
+    }
+
     pub async fn checksum_file_with_hasher(file: &FilePath, mut hasher: Box<dyn Hasher>) -> Result<Checksum> {
         let mut f = tokio::fs::File::open(file).await?;
         
@@ -215,7 +219,7 @@ impl Hasher for Sha256Hasher {
     }
 }
 
-struct Sha512Hasher {
+pub struct Sha512Hasher {
     hasher: Sha512
 }
 

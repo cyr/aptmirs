@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use compact_str::format_compact;
 
-use crate::{context::Context, downloader::Download, error::{MirsError, Result}, log, metadata::{release::Release, FilePath}, mirror::MirrorResult, pgp::verify_release_signature, step::{Step, StepResult}};
+use crate::{context::Context, downloader::Download, error::{MirsError, Result}, log, metadata::{checksum::Checksum, release::Release, FilePath}, mirror::MirrorResult, pgp::verify_release_signature, step::{Step, StepResult}};
 
 use super::MirrorState;
 
@@ -67,14 +68,25 @@ impl Step<MirrorState> for DownloadRelease {
             return Err(MirsError::NoReleaseFile)
         };
 
+        let local_release = ctx.state.repo.tmp_to_root(release_file);
+
+        if local_release.exists() {
+            let local_checksum = Checksum::checksum_file(&local_release).await?;
+            let new_checksum = Checksum::checksum_file(release_file).await?;
+
+            output.new_release = local_checksum != new_checksum;
+        }
+
         let mut release = Release::parse(release_file, &ctx.state.opts).await
             .map_err(|e| MirsError::InvalidReleaseFile { inner: Box::new(e) })?;
+
 
         // we prune all the metadata files that this release references that we already have, by comparing the actual checksum.
         // this way, we will attempt to redownload missing files as well as files that are there as a result of a previous 
         // sync, where a later release had that file referenced, but wasn't available at the time of mirroring. if all the
         // files are okay, then there is nothing more to do!
-        release.prune_existing(ctx.state.repo.root_dir.as_str()).await?;
+        let dist_root = FilePath(format_compact!("{}/{}", ctx.state.repo.root_dir, ctx.state.opts.dist_part()));
+        release.prune_existing(dist_root.as_str()).await?;
         
         if release.files.is_empty() {
             return Ok(StepResult::End(MirrorResult::ReleaseUnchanged))

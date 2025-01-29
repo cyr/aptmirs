@@ -87,7 +87,14 @@ impl Step<MirrorState> for DownloadMetadata {
         output.total_bytes_downloaded += ctx.progress.bytes.success();
 
         if output.is_empty() {
-            return Ok(StepResult::End(MirrorResult::IrrelevantChanges))
+
+            let result = if output.new_release {
+                MirrorResult::IrrelevantChanges
+            } else {
+                MirrorResult::ReleaseUnchangedButIncomplete
+            };
+
+            return Ok(StepResult::End(result))
         }
         
         Ok(StepResult::Continue)

@@ -30,6 +30,8 @@ pub enum MirrorResult {
     ReleaseUnchanged,
     #[error("Ok: new release, but changes do not apply to configured selections")]
     IrrelevantChanges,
+    #[error("Ok: release unchanged, but attempted to download missing files")]
+    ReleaseUnchangedButIncomplete,
     #[error("Fail: {0}")]
     Error(MirsError)
 }
@@ -52,6 +54,7 @@ pub struct MirrorOutput {
     pub delete_paths: Vec<FilePath>,
     pub total_bytes_downloaded: u64,
     pub total_packages_downloaded: u64,
+    pub new_release: bool,
 } 
 
 impl MirrorOutput {
@@ -133,6 +136,7 @@ impl CmdState for MirrorState {
                     return MirrorResult::Error(MirsError::Finalize { inner: Box::new(e) })
                 }
             },
+            MirrorResult::ReleaseUnchangedButIncomplete { .. } |
             MirrorResult::ReleaseUnchanged |
             MirrorResult::Error(..) => {
                 _ = self.repo.delete_tmp();
