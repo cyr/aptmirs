@@ -144,17 +144,7 @@ impl Release {
         while let Some((path, entry)) = self.files.pop_first() {
             let old_path = root.join(&path);
 
-            if old_path.exists() {
-                if let Some(referenced_checksum) = entry.strongest_hash() {
-                    let hasher = referenced_checksum.create_hasher();
-
-                    let existing_checksum = Checksum::checksum_file_with_hasher(&old_path, hasher).await?;
-
-                    if existing_checksum != referenced_checksum {
-                        pruned.insert(path, entry);
-                    }
-                }
-            } else {
+            if !valid_file(&old_path, &entry).await? {
                 pruned.insert(path, entry);
             }
         }
@@ -163,6 +153,24 @@ impl Release {
 
         Ok(())
     }
+}
+
+async fn valid_file(old_path: &FilePath, entry: &FileEntry) -> Result<bool> {
+    if old_path.exists() {
+        if let Some(symlink_path) = old_path.symlink_path().await? {
+            if let Ok(checksum) = Checksum::try_from(symlink_path.file_name()) {
+                return Ok(entry.has_checksum(&checksum))
+            }
+        } else if let Some(referenced_checksum) = entry.strongest_hash() {
+            let hasher = referenced_checksum.create_hasher();
+
+            let existing_checksum = Checksum::checksum_file_with_hasher(old_path, hasher).await?;
+
+            return Ok(existing_checksum == referenced_checksum)
+        }
+    }
+
+    Ok(false)
 }
 
 pub struct ReleaseFileFilter {
@@ -413,6 +421,15 @@ impl FileEntry {
             Some(hash.into())
         } else {
             self.md5.map(|v| v.into())
+        }
+    }
+
+    pub fn has_checksum(&self, checksum: &Checksum) -> bool {
+        match checksum {
+            Checksum::Md5(hash) => self.md5.map(|v| v == *hash).unwrap_or(false),
+            Checksum::Sha1(hash) => self.sha1.map(|v| v == *hash).unwrap_or(false),
+            Checksum::Sha256(hash) => self.sha256.map(|v| v == *hash).unwrap_or(false),
+            Checksum::Sha512(hash) => self.sha512.map(|v| v == *hash).unwrap_or(false),
         }
     }
 

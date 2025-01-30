@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, fmt::Display, fs::Metadata, io::{BufRead, BufReader, Read}, path::Path, str::FromStr, sync::{atomic::{AtomicU64, Ordering}, Arc}};
+use std::{borrow::Borrow, fmt::Display, fs::Metadata, io::{BufRead, BufReader, Read}, path::{Path, PathBuf}, str::FromStr, sync::{atomic::{AtomicU64, Ordering}, Arc}};
 
 use compact_str::{format_compact, CompactString, ToCompactString};
 use metadata_file::MetadataFile;
@@ -36,6 +36,12 @@ impl FromStr for FilePath {
 impl From<&str> for FilePath {
     fn from(value: &str) -> Self {
         Self(CompactString::from(value))
+    }
+}
+
+impl From<PathBuf> for FilePath {
+    fn from(value: PathBuf) -> Self {
+        Self(CompactString::from(value.into_os_string().into_string().expect("file paths should be utf8")))
     }
 }
 
@@ -94,6 +100,18 @@ impl FilePath {
 
     pub fn exists(&self) -> bool {
         self.metadata().is_ok()
+    }
+
+    pub async fn symlink_path(&self) -> Result<Option<FilePath>> {
+        let metadata = tokio::fs::symlink_metadata(&self.0).await?;
+
+        if metadata.is_symlink() {
+            let link = tokio::fs::read_link(&self.0).await?;
+
+            Ok(Some(FilePath::from(link)))
+        } else {
+            Ok(None)
+        }
     }
 
     pub fn extension(&self) -> Option<&str> {
