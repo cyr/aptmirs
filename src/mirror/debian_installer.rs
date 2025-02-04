@@ -41,7 +41,7 @@ impl Step<MirrorState> for DownloadDebianInstaller {
             let mut files_to_delete = Vec::new();
 
             for sum_file in sum_files {
-                let rel_path = task_repo.strip_tmp_base(sum_file.file().path()).expect("sum files should be in tmp");
+                let rel_path = task_repo.strip_tmp_base(sum_file.file().path());
                 let old_path = task_repo.rebase_rel_to_root(&rel_path);
                 let old_base = FilePath::from(old_path.parent().expect("sumfiles should have a parent"));
 
@@ -54,10 +54,7 @@ impl Step<MirrorState> for DownloadDebianInstaller {
                     HashMap::new()
                 };
 
-                let base_path = sum_file.file().path().parent()
-                    .expect("sum files should have a parent");
-
-                let base_path = FilePath::from(base_path);
+                let base_path = FilePath::from(sum_file.file().path().parent().expect("sum files should have a parent"));
 
                 for file in sum_file {
                     let file = file?;
@@ -70,8 +67,7 @@ impl Step<MirrorState> for DownloadDebianInstaller {
  
                     let new_path = base_path.join(&file.path);
 
-                    let new_rel_path = task_repo.strip_tmp_base(&new_path)
-                        .expect("the new path should be in tmp");
+                    let new_rel_path = task_repo.strip_tmp_base(&new_path);
 
                     let url = task_repo.to_url_in_root(new_rel_path.as_str());
 

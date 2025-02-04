@@ -109,7 +109,7 @@ impl Repository {
             .map_err(MirsError::from)
     }
 
-    pub fn strip_root<'a>(&'a self, path: &'a str) -> &'a str {
+    pub fn strip_root<'a>(&self, path: &'a str) -> &'a str {
         let Some(path) = path.strip_prefix(self.root_dir.as_str()) else {
             return path
         };
@@ -151,10 +151,11 @@ impl Repository {
             .expect("path should be in tmp")
     }
     
-    pub fn strip_tmp_base<P: AsRef<str>>(&self, path: P) -> Option<FilePath> {
+    pub fn strip_tmp_base<P: AsRef<str>>(&self, path: P) -> FilePath {
         path.as_ref().strip_prefix(self.tmp_dir.as_str())
             .map(|v| v.strip_prefix('/').expect("Paths that strip tmp base should always start with / here"))
             .map(FilePath::from)
+            .expect("path should be in tmp")
     }
 
     pub fn create_file_download(&self, package: IndexFileEntry) -> Box<Download> {
@@ -240,7 +241,7 @@ impl KeyStore for Repository {
     }
 }
 
-fn sanitize_path_part(part: &str) -> CompactString {
+fn sanitize_name(part: &str) -> CompactString {
     let mut sanitized = CompactString::new("");
 
     let char_iter = part.chars();
@@ -266,11 +267,13 @@ fn create_tmp_dir(url: &Url, suite: &str, base_dir: &FilePath) -> Result<FilePat
     let path_part = if path == "/" {
         CompactString::new("")
     } else {
-        sanitize_path_part(path)
+        sanitize_name(path)
     };
+    
+    let suite_part = sanitize_name(suite);
 
     let tmp_dir = base_dir
-        .join(format_compact!(".tmp/{host}{path_part}_{suite}"));
+        .join(format_compact!(".tmp/{host}{path_part}_{suite_part}"));
 
     match std::fs::metadata(&tmp_dir) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {

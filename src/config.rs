@@ -195,6 +195,8 @@ impl MirrorOpts {
             return Err(MirsError::Config { msg: CompactString::const_new("no url specified") })
         };
 
+        let url = url.strip_suffix('/').unwrap_or_else(|| url);
+
         let Some(suite) = line_parts.next() else {
             return Err(MirsError::Config { msg: CompactString::const_new("no suite specified") })
         };

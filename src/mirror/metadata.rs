@@ -41,6 +41,11 @@ impl Step<MirrorState> for DownloadMetadata {
 
             let file_path_in_tmp = ctx.state.repo.to_path_in_tmp(&url);
 
+            if file_path_in_tmp.exists() && file_path_in_tmp.file_name() == "Release" || file_path_in_tmp.file_name() == "InRelease" {
+                eprintln!("WARNING: Self-referential metadata exists, ignoring");
+                continue
+            }
+
             let file_path_in_root = ctx.state.repo.to_path_in_root(&url);
             
             // since all files have their checksums verified on download, any file that is local can

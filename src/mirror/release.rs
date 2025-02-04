@@ -56,6 +56,10 @@ impl Step<MirrorState> for DownloadRelease {
 
         progress_bar.finish_using_style();
 
+        let Some(release_file) = get_release_file(&files) else {
+            return Err(MirsError::NoReleaseFile)
+        };
+
         if ctx.state.opts.pgp_verify {
             if ctx.state.repo.has_specified_pgp_key() {
                 verify_release_signature(&files, ctx.state.repo.as_ref())?;
@@ -63,10 +67,6 @@ impl Step<MirrorState> for DownloadRelease {
                 verify_release_signature(&files, ctx.state.pgp_key_store.as_ref())?;
             }
         }
-
-        let Some(release_file) = get_release_file(&files) else {
-            return Err(MirsError::NoReleaseFile)
-        };
 
         let local_release = ctx.state.repo.tmp_to_root(release_file);
 
@@ -112,7 +112,7 @@ impl Step<MirrorState> for DownloadRelease {
 }
 
 fn get_release_file(files: &Vec<FilePath>) -> Option<&FilePath> {
-    for file in files {
+    for file in files.iter().filter(|f| f.exists()) {
         if let "InRelease" | "Release" = file.file_name() {
             return Some(file)
         }
