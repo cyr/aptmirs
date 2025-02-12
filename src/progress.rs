@@ -1,4 +1,4 @@
-use std::{sync::{Arc, atomic::{AtomicU64, Ordering, AtomicU8}}, time::Duration};
+use std::{fmt::Display, sync::{atomic::{AtomicU64, AtomicU8, Ordering}, Arc}, time::Duration};
 
 use compact_str::ToCompactString;
 use console::{style, pad_str};
@@ -189,6 +189,17 @@ pub struct ProgressPart {
     success: Arc<AtomicU64>,
     skipped: Arc<AtomicU64>,
     failed: Arc<AtomicU64>
+}
+
+impl Display for ProgressPart {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(
+            format_args!(
+                "{} succeeded, {} skipped, {} failed",
+                self.success(), self.skipped(), self.failed()
+            )
+        )
+    }
 }
 
 impl ProgressPart {

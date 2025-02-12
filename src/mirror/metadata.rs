@@ -82,7 +82,7 @@ impl Step<MirrorState> for DownloadMetadata {
         ctx.progress.wait_for_completion(&mut progress_bar).await;
 
         if ctx.progress.files.failed() > 0 {
-            return Err(MirsError::InconsistentRepository)
+            return Err(MirsError::InconsistentRepository { progress: ctx.progress.files.clone() })
         }
 
         verify_and_prune(&mut metadata);

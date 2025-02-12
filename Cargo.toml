@@ -3,6 +3,10 @@ name = "aptmirs"
 description = "A simple tool for mirroring apt/deb repositories"
 version = "0.17.3"
 edition = "2021"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/cyr/aptmirs"
+keywords = ["debian", "repository", "apt", "mirror"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

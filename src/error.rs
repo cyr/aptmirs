@@ -7,7 +7,7 @@ use reqwest::StatusCode;
 use thiserror::Error;
 use tokio::task::JoinError;
 
-use crate::{downloader::Download, metadata::FilePath, verifier::VerifyTask};
+use crate::{downloader::Download, metadata::FilePath, progress::ProgressPart, verifier::VerifyTask};
 
 pub type Result<T> = std::result::Result<T, MirsError>;
 
@@ -133,6 +133,6 @@ pub enum MirsError {
     #[error("non-index file can't be made into readers")]
     NonIndexFileBuild { path: FilePath },
 
-    #[error("repository is in an inconsistent state")]
-    InconsistentRepository
+    #[error("repository is in an inconsistent state, file stats: {progress}")]
+    InconsistentRepository { progress: ProgressPart }
 }

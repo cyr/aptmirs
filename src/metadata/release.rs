@@ -426,11 +426,11 @@ impl FileEntry {
 
     pub fn has_checksum(&self, checksum: &Checksum) -> bool {
         match checksum {
-            Checksum::Md5(hash) => self.md5.map(|v| v == *hash).unwrap_or(false),
-            Checksum::Sha1(hash) => self.sha1.map(|v| v == *hash).unwrap_or(false),
-            Checksum::Sha256(hash) => self.sha256.map(|v| v == *hash).unwrap_or(false),
-            Checksum::Sha512(hash) => self.sha512.map(|v| v == *hash).unwrap_or(false),
-        }
+            Checksum::Md5(hash) => self.md5.map(|v| v == *hash),
+            Checksum::Sha1(hash) => self.sha1.map(|v| v == *hash),
+            Checksum::Sha256(hash) => self.sha256.map(|v| v == *hash),
+            Checksum::Sha512(hash) => self.sha512.map(|v| v == *hash),
+        }.unwrap_or(false)
     }
 
     pub fn into_paths(self, file_path: &FilePath, by_hash: bool) -> Result<(Option<Checksum>, FilePath, Vec<FilePath>)> {

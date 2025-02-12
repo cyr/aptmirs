@@ -111,12 +111,12 @@ impl Step<MirrorState> for DownloadRelease {
     }
 }
 
-fn get_release_file(files: &Vec<FilePath>) -> Option<&FilePath> {
+fn get_release_file(files: &[FilePath]) -> Option<&FilePath> {
     for file in files.iter().filter(|f| f.exists()) {
         if let "InRelease" | "Release" = file.file_name() {
             return Some(file)
         }
     }
-
+    
     None
 }
