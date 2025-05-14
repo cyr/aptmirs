@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use compact_str::format_compact;
 
-use crate::{context::Context, error::MirsError, metadata::{metadata_file::{deduplicate_metadata, MetadataFile}, FilePath}, mirror::MirrorResult, step::{Step, StepResult}};
+use crate::{context::Context, error::MirsError, metadata::{metadata_file::{deduplicate_metadata, MetadataFile}, repository::{INRELEASE_FILE_NAME, RELEASE_FILE_NAME}, FilePath}, mirror::MirrorResult, step::{Step, StepResult}};
 use crate::error::Result;
 
 use super::{verify_and_prune, MirrorState};
@@ -41,7 +41,7 @@ impl Step<MirrorState> for DownloadMetadata {
 
             let file_path_in_tmp = ctx.state.repo.to_path_in_tmp(&url);
 
-            if file_path_in_tmp.exists() && file_path_in_tmp.file_name() == "Release" || file_path_in_tmp.file_name() == "InRelease" {
+            if file_path_in_tmp.exists() && file_path_in_tmp.file_name() == RELEASE_FILE_NAME || file_path_in_tmp.file_name() == INRELEASE_FILE_NAME {
                 eprintln!("WARNING: Self-referential metadata exists, ignoring");
                 continue
             }

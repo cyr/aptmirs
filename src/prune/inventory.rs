@@ -4,7 +4,7 @@ use ahash::HashMap;
 use async_trait::async_trait;
 use compact_str::format_compact;
 
-use crate::{context::Context, error::MirsError, metadata::{metadata_file::{deduplicate_metadata, MetadataFile}, release::{FileEntry, Release}, repository::Repository, FilePath}, mirror::verify_and_prune, progress::Progress, step::{Step, StepResult}};
+use crate::{context::Context, error::MirsError, metadata::{metadata_file::{deduplicate_metadata, MetadataFile}, release::{FileEntry, Release}, repository::{Repository, INRELEASE_FILE_NAME, RELEASE_FILE_NAME, RELEASE_GPG_FILE_NAME}, FilePath}, mirror::verify_and_prune, progress::Progress, step::{Step, StepResult}};
 use crate::error::Result;
 
 use super::{PruneResult, PruneState};
@@ -129,9 +129,9 @@ fn add_valid_file(progress: &mut Progress, files: &mut HashMap<FilePath, Option<
 
 fn get_rooted_release_files(root: &FilePath) -> Vec<FilePath> {
     [
-        root.join("InRelease"),
-        root.join("Release"),
-        root.join("Release.gpg")
+        root.join(INRELEASE_FILE_NAME),
+        root.join(RELEASE_FILE_NAME),
+        root.join(RELEASE_GPG_FILE_NAME)
     ].into_iter()
         .filter(|v| v.exists())
         .collect()
@@ -139,7 +139,7 @@ fn get_rooted_release_files(root: &FilePath) -> Vec<FilePath> {
 
 fn pick_release(files: &[FilePath]) -> Option<&FilePath> {
     for f in files {
-        if let "InRelease" | "Release" = f.file_name() {
+        if let INRELEASE_FILE_NAME | RELEASE_FILE_NAME = f.file_name() {
             return Some(f)
         }
     }

@@ -3,7 +3,7 @@ use std::{path::{Path, Component}, collections::{BTreeMap, BTreeSet}};
 use compact_str::{format_compact, CompactString, ToCompactString};
 use tokio::{fs::File, io::{BufReader, AsyncBufReadExt}};
 
-use crate::{config::MirrorOpts, error::{MirsError, Result}};
+use crate::{config::MirrorOpts, error::{MirsError, Result}, progress::Progress};
 
 use super::{checksum::Checksum, metadata_file::MetadataFile, FilePath};
 
@@ -137,15 +137,20 @@ impl Release {
         ReleaseFileIterator::new(self)
     }
 
-    pub async fn prune_existing(&mut self, root_path: &str) -> Result<()> {
+    pub async fn prune_existing(&mut self, root_path: &str, progress: Progress) -> Result<()> {
         let mut pruned = BTreeMap::new();
         let root = FilePath::from(root_path);
 
         while let Some((path, entry)) = self.files.pop_first() {
             let old_path = root.join(&path);
 
+            let size = entry.size;
+
             if !valid_file(&old_path, &entry).await? {
                 pruned.insert(path, entry);
+                progress.bytes.inc_failed(size);
+            } else {
+                progress.bytes.inc_success(size);
             }
         }
 

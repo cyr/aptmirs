@@ -6,6 +6,10 @@ use reqwest::Url;
 
 use crate::{config::MirrorOpts, downloader::Download, error::{MirsError, Result}, metadata::{checksum::Checksum, release::FileEntry, FilePath, IndexFileEntry}, pgp::{read_public_key, KeyStore}, CliOpts};
 
+pub const INRELEASE_FILE_NAME: &str = "InRelease";
+pub const RELEASE_FILE_NAME: &str = "Release";
+pub const RELEASE_GPG_FILE_NAME: &str = "Release.gpg";
+
 #[derive(Default)]
 pub struct Repository {
     pub root_url: CompactString,
@@ -77,9 +81,9 @@ impl Repository {
 
     pub fn release_urls(&self) -> [CompactString; 3] {
         [
-            format_compact!("{}/InRelease", self.dist_url),
-            format_compact!("{}/Release", self.dist_url),
-            format_compact!("{}/Release.gpg", self.dist_url)
+            format_compact!("{}/{INRELEASE_FILE_NAME}", self.dist_url),
+            format_compact!("{}/{RELEASE_FILE_NAME}", self.dist_url),
+            format_compact!("{}/{RELEASE_GPG_FILE_NAME}", self.dist_url)
         ]
     }
 

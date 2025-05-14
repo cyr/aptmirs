@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use compact_str::format_compact;
 
-use crate::{context::Context, downloader::Download, error::{MirsError, Result}, log, metadata::{checksum::Checksum, release::Release, FilePath}, mirror::MirrorResult, pgp::verify_release_signature, step::{Step, StepResult}};
+use crate::{context::Context, downloader::Download, error::{MirsError, Result}, log, metadata::{checksum::Checksum, release::Release, repository::{INRELEASE_FILE_NAME, RELEASE_FILE_NAME}, FilePath}, mirror::MirrorResult, pgp::verify_release_signature, progress::Progress, step::{Step, StepResult}};
 
 use super::MirrorState;
 
@@ -85,8 +85,18 @@ impl Step<MirrorState> for DownloadRelease {
         // this way, we will attempt to redownload missing files as well as files that are there as a result of a previous 
         // sync, where a later release had that file referenced, but wasn't available at the time of mirroring. if all the
         // files are okay, then there is nothing more to do!
+
+        let total_meta_size: u64 = release.files.iter().map(|(_, entry)| entry.size).sum();
+
+        let file_progress = Progress::new_with_step(0, "Verifying existing");
+        file_progress.bytes.inc_total(total_meta_size);
+
+        let mut processing_progress_bar = file_progress.create_processing_progress_bar().await;
+
         let dist_root = FilePath(format_compact!("{}/{}", ctx.state.repo.root_dir, ctx.state.opts.dist_part()));
-        release.prune_existing(dist_root.as_str()).await?;
+        release.prune_existing(dist_root.as_str(), file_progress.clone()).await?;
+
+        file_progress.wait_for_completion(&mut processing_progress_bar).await;
         
         if release.files.is_empty() {
             return Ok(StepResult::End(MirrorResult::ReleaseUnchanged))
@@ -113,7 +123,7 @@ impl Step<MirrorState> for DownloadRelease {
 
 fn get_release_file(files: &[FilePath]) -> Option<&FilePath> {
     for file in files.iter().filter(|f| f.exists()) {
-        if let "InRelease" | "Release" = file.file_name() {
+        if let INRELEASE_FILE_NAME | RELEASE_FILE_NAME = file.file_name() {
             return Some(file)
         }
     }
