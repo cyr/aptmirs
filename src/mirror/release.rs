@@ -86,7 +86,7 @@ impl Step<MirrorState> for DownloadRelease {
         // sync, where a later release had that file referenced, but wasn't available at the time of mirroring. if all the
         // files are okay, then there is nothing more to do!
 
-        let total_meta_size: u64 = release.files.iter().map(|(_, entry)| entry.size).sum();
+        let total_meta_size: u64 = release.files.values().map(|entry| entry.size).sum();
 
         let file_progress = Progress::new_with_step(0, "Verifying existing");
         file_progress.bytes.inc_total(total_meta_size);
@@ -104,7 +104,7 @@ impl Step<MirrorState> for DownloadRelease {
 
         if let Some(release_components) = release.components() {
             let components = release_components.split_ascii_whitespace()
-                .map(|v| v.split('/').last().expect("last should always exist here"))
+                .map(|v| v.split('/').next_back().expect("last should always exist here"))
                 .collect::<Vec<&str>>();
 
             for requested_component in &ctx.state.opts.components {

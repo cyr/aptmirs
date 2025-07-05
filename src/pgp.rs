@@ -2,9 +2,8 @@ use std::collections::BTreeMap;
 use std::fs::File;
 use std::sync::Arc;
 
-use pgp::cleartext::CleartextSignedMessage;
-use pgp::types::PublicKeyTrait;
-use pgp::{Deserializable, SignedPublicKey, SignedPublicSubKey, StandaloneSignature};
+use pgp::composed::{Deserializable, SignedPublicKey, SignedPublicSubKey, StandaloneSignature, CleartextSignedMessage};
+use pgp::types::KeyDetails;
 use walkdir::WalkDir;
 
 use crate::metadata::repository::{INRELEASE_FILE_NAME, RELEASE_FILE_NAME, RELEASE_GPG_FILE_NAME};

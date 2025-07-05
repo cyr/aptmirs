@@ -1,7 +1,7 @@
 use std::{str::FromStr, sync::Arc};
 
 use compact_str::{format_compact, CompactString, ToCompactString};
-use pgp::{cleartext::CleartextSignedMessage, SignedPublicKey, StandaloneSignature};
+use pgp::composed::{SignedPublicKey, StandaloneSignature, CleartextSignedMessage};
 use reqwest::Url;
 
 use crate::{config::MirrorOpts, downloader::Download, error::{MirsError, Result}, metadata::{checksum::Checksum, release::FileEntry, FilePath, IndexFileEntry}, pgp::{read_public_key, KeyStore}, CliOpts};

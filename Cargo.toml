@@ -1,8 +1,9 @@
 [package]
 name = "aptmirs"
 description = "A simple tool for mirroring apt/deb repositories"
-version = "0.17.6"
-edition = "2021"
+authors = ["cyr"]
+version = "0.17.7"
+edition = "2024"
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/cyr/aptmirs"
@@ -14,19 +15,19 @@ keywords = ["debian", "repository", "apt", "mirror"]
 ahash = "0.8.11"
 async-channel = "2.3.1"
 async-trait = "0.1.86"
-bzip2 = "0.5.1"
+bzip2 = "0.6.0"
 chrono = "0.4.39"
 clap = { version = "4.5.29", features = ["cargo", "derive", "env"] }
-compact_str = { version = "0.8.1", features = ["serde"] }
-console = "0.15.10"
+compact_str = { version = "0.9.0", features = ["serde"] }
+console = "0.16.0"
 flate2 = "1.0.35"
 hex = "0.4.3"
-indicatif = "0.17.11"
-md5 = "0.7.0"
+indicatif = "0.18.0"
+md5 = "0.8.0"
 pathdiff = "0.2.3"
-pgp = "0.15.0"
+pgp = "0.16.0"
 regex = "1.11.1"
-reqwest = { version = "0.12.12", features = ["rustls-tls"] }
+reqwest = { version = "0.12.12", default-features = false, features = ["rustls-tls"] }
 sha1 = "0.10.6"
 sha2 = "0.10.8"
 thiserror = "2.0.11"

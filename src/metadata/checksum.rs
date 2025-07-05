@@ -171,7 +171,7 @@ impl Hasher for Md5Hasher {
     }
 
     fn compute(self: Box<Self>) -> Checksum {
-        Checksum::Md5(self.ctx.compute().0)
+        Checksum::Md5(self.ctx.finalize().0)
     }
 }
 

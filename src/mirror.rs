@@ -136,7 +136,7 @@ impl CmdState for MirrorState {
                     return MirrorResult::Error(MirsError::Finalize { inner: Box::new(e) })
                 }
             },
-            MirrorResult::ReleaseUnchangedButIncomplete { .. } |
+            MirrorResult::ReleaseUnchangedButIncomplete |
             MirrorResult::ReleaseUnchanged |
             MirrorResult::Error(..) => {
                 _ = self.repo.delete_tmp();

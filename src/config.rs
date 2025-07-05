@@ -56,7 +56,7 @@ pub async fn read_config(path: &FilePath) -> Result<Vec<MirrorOpts>> {
 fn merge_similar(mut mirrors: Vec<MirrorOpts>) -> Vec<MirrorOpts> {
     mirrors.sort();
 
-    let merged_mirrors = mirrors.into_iter().fold(Vec::new(), |mut a: Vec<MirrorOpts>, mut new| {
+    mirrors.into_iter().fold(Vec::new(), |mut a: Vec<MirrorOpts>, mut new| {
         if let Some(last) = a.last_mut() {
             if last == &new {
                 for component in new.components {
@@ -94,9 +94,7 @@ fn merge_similar(mut mirrors: Vec<MirrorOpts>) -> Vec<MirrorOpts> {
         }
 
         a
-    });
-
-    merged_mirrors
+    })
 }
 
 #[derive(Eq, Default)]
@@ -205,7 +203,7 @@ impl MirrorOpts {
         // and might be a holdover from older repository structures. debian-security uses this and the path
         // is just symlinked back to the repository root. should we support this? maybe, but probably not.
         let mut components = line_parts
-            .map(|v| v.split('/').last().expect("last should always exist here").to_compact_string())
+            .map(|v| v.split('/').next_back().expect("last should always exist here").to_compact_string())
             .collect::<Vec<_>>();
 
         if components.is_empty() {
