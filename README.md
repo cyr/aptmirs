@@ -9,11 +9,10 @@
   components.
 * Updating an existing mirror is done by comparing the new Release file with the existing one, and
   only if there are any changes will the operation continue. Similarly, any file that already
-  exists with the same checksum will not be downloaded again.
-  This should make keeping an up to date mirror of a repository less stressful for the source
-  servers, which _probably_ would make it more okay with more frequent updates than the recommended
-  schedule of every 6 hours.
-* During an update metadata files (Packages, Release, etc) are kept in a temporary folder until
+  exists with the same checksum will not be downloaded again. This should make keeping an up
+  to date mirror of a repository less stressful for the source servers, which _probably_ would
+  make it more okay with more frequent updates than the recommended schedule of every 6 hours.
+* During an update, metadata files (Packages, Release, etc) are kept in a temporary folder until
   all packages are downloaded. When completed, the files are moved into the target mirror folder.
   This should limit the time the repository is unavailable during an update.
 
@@ -55,8 +54,8 @@ Mirror *arm64* and *amd64* packages, and also download the *amd64* debian instal
 deb [arch=arm64 arch=amd64 di_arch=amd64] http://ftp.se.debian.org/debian  trixie  main contrib non-free non-free-firmware
 ```
 
-Mirror *amd64* packages and verify the PGP signature with a key in the specified directory:
-Requires that the `--pgp-key-path` command option be set when syncing the mirror.
+Mirror *amd64* packages and verify the PGP signature with a key in the specified directory.
+Requires that the `--pgp-key-path` command option be set when syncing the mirror:
 
 ```
 deb [arch=amd64 pgp_verify=true] http://ftp.se.debian.org/debian  trixie  main contrib non-free non-free-firmware
@@ -87,7 +86,7 @@ options. There are three operations: `mirror`, `prune` and `verify`.
 | ---------------| ------------ | ------------- | ----------- |
 | --config       | -c           | CONFIG=       | The path to the config file containing the mirror options. [default: /etc/apt/mirror.list] |
 | --force        | -f           | FORCE=        | Ignore the current release and package files and assume all metadata is stale. |
-| --dl-threads   | -d           | DL_THREADS=   | The maximum number of concurrent mirror download tasks. *Works only with the `mirror` command*. [default: 8] |
+| --dl-threads   | -d           | DL_THREADS=   | The maximum number of concurrent mirror download tasks. *Works only with the `mirror` and `prune` commands*. [default: 8] |
 | --dry-run      | -d           |               | Prints the files that the prune operation would delete. *Works only with the `prune` command*. |
 | --output       | -o           | OUTPUT=       | The directory into where the mirrors will be downloaded. |
 | --pgp-key-path | -p           | PGP_KEY_PATH= | Path to folder where PGP public keys reside. All valid keys will be used in signature verification where applicable. |
