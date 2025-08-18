@@ -179,10 +179,8 @@ async fn download_file<F>(http_client: &Client, download: Box<Download>, mut pro
 }
 
 pub async fn create_dirs<P: AsRef<Path>>(path: P) -> Result<()> {
-    if let Some(parent_dir) = path.as_ref().parent() {
-        if !parent_dir.exists() {
-            tokio::fs::create_dir_all(parent_dir).await?;
-        }
+    if let Some(parent_dir) = path.as_ref().parent() && !parent_dir.exists()  {
+        tokio::fs::create_dir_all(parent_dir).await?;
     }
 
     Ok(())

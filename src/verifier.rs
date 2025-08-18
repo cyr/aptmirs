@@ -57,10 +57,8 @@ impl Verifier {
                             eprintln!("checksum failed: {}", task.paths.first().unwrap());
                         },
                         Err(e) => {
-                            if let MirsError::Download { .. } = e {
-                                if let Some(size) = file_size {
-                                    task_progress.bytes.inc_skipped(size);
-                                }
+                            if let MirsError::Download { .. } = e && let Some(size) = file_size {
+                                task_progress.bytes.inc_skipped(size);
                             }
     
                             task_progress.files.inc_skipped(1);

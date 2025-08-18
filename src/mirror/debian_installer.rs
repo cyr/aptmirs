@@ -59,10 +59,8 @@ impl Step<MirrorState> for DownloadDebianInstaller {
                 for file in sum_file {
                     let file = file?;
 
-                    if let Some(old_file) = old_map.remove(&file.path) {
-                        if old_file.checksum == file.checksum {
-                            continue
-                        }
+                    if let Some(old_file) = old_map.remove(&file.path) && old_file.checksum == file.checksum {
+                        continue
                     }
  
                     let new_path = base_path.join(&file.path);

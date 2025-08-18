@@ -134,32 +134,24 @@ impl KeyStore for PgpKeyStore {
             for fingerprint in signature.signature.issuer_fingerprint() {
                 let hex_fingerprint = hex::encode(fingerprint.as_bytes());
 
-                if let Some(key) = self.primary_fingerprints.get(&hex_fingerprint) {
-                    if signature.verify(key.as_ref(), content.as_bytes()).is_ok() {
-                        return Ok(())
-                    }
+                if let Some(key) = self.primary_fingerprints.get(&hex_fingerprint) && signature.verify(key.as_ref(), content.as_bytes()).is_ok() {
+                    return Ok(())
                 }
 
-                if let Some(key) = self.sub_fingerprints.get(&hex_fingerprint) {
-                    if signature.verify(key.as_ref(), content.as_bytes()).is_ok() {
-                        return Ok(())
-                    }
+                if let Some(key) = self.sub_fingerprints.get(&hex_fingerprint) && signature.verify(key.as_ref(), content.as_bytes()).is_ok() {
+                    return Ok(())
                 }
             }
 
             for key_id in signature.signature.issuer() {
                 let hex_key_id = hex::encode(key_id.as_ref());
 
-                if let Some(key) = self.primary_key_ids.get(&hex_key_id) {
-                    if signature.verify(key.as_ref(), content.as_bytes()).is_ok() {
-                        return Ok(())
-                    }
+                if let Some(key) = self.primary_key_ids.get(&hex_key_id) && signature.verify(key.as_ref(), content.as_bytes()).is_ok() {
+                    return Ok(())
                 }
 
-                if let Some(key) = self.sub_key_ids.get(&hex_key_id) {
-                    if signature.verify(key.as_ref(), content.as_bytes()).is_ok() {
-                        return Ok(())
-                    }
+                if let Some(key) = self.sub_key_ids.get(&hex_key_id) && signature.verify(key.as_ref(), content.as_bytes()).is_ok() {
+                    return Ok(())
                 }
             }
         }
@@ -187,32 +179,26 @@ impl KeyStore for PgpKeyStore {
         for fingerprint in signature.signature.issuer_fingerprint() {
             let hex_fingerprint = hex::encode(fingerprint.as_bytes());
 
-            if let Some(key) = self.primary_fingerprints.get(&hex_fingerprint) {
-                if signature.verify(key.as_ref(), content.as_bytes()).is_ok() {
-                    return Ok(())
-                }
+            if let Some(key) = self.primary_fingerprints.get(&hex_fingerprint) && signature.verify(key.as_ref(), content.as_bytes()).is_ok() {
+                return Ok(())
             }
 
-            if let Some(key) = self.sub_fingerprints.get(&hex_fingerprint) {
-                if signature.verify(key.as_ref(), content.as_bytes()).is_ok() {
-                    return Ok(())
-                }
+            if let Some(key) = self.sub_fingerprints.get(&hex_fingerprint) && signature.verify(key.as_ref(), content.as_bytes()).is_ok() {
+                return Ok(())
             }
         }
 
         for key_id in signature.signature.issuer() {
             let hex_key_id = hex::encode(key_id.as_ref());
 
-            if let Some(key) = self.primary_key_ids.get(&hex_key_id) {
-                if signature.verify(key.as_ref(), content.as_bytes()).is_ok() {
-                    return Ok(())
-                }
+            if let Some(key) = self.primary_key_ids.get(&hex_key_id)
+                && signature.verify(key.as_ref(), content.as_bytes()).is_ok() {
+                return Ok(())
             }
 
-            if let Some(key) = self.sub_key_ids.get(&hex_key_id) {
-                if signature.verify(key.as_ref(), content.as_bytes()).is_ok() {
-                    return Ok(())
-                }
+            if let Some(key) = self.sub_key_ids.get(&hex_key_id)
+                && signature.verify(key.as_ref(), content.as_bytes()).is_ok() {
+                return Ok(())
             }
         }
 
@@ -227,10 +213,8 @@ pub fn read_public_key(path: &FilePath) -> Result<SignedPublicKey> {
     let (signed_public_key, _) = SignedPublicKey::from_reader_single(&key_file)
         .map_err(|e| MirsError::PgpPubKey { path: path.clone(), inner: Box::new(e.into()) })?;
 
-    if let Some(expiry_date) = signed_public_key.expires_at() {
-        if expiry_date < chrono::Utc::now() {
-            return Err(MirsError::PgpKeyVerification { path: path.clone(), msg: String::from("public key is expired") })
-        }
+    if let Some(expiry_date) = signed_public_key.expires_at() && expiry_date < chrono::Utc::now() {
+        return Err(MirsError::PgpKeyVerification { path: path.clone(), msg: String::from("public key is expired") })
     }
 
     Ok(signed_public_key)

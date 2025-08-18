@@ -93,10 +93,8 @@ fn should_delete(valid_files: &HashMap<FilePath, Option<u64>>, entry: &walkdir::
 
     if size == 0 {
         if let Some(expected_size) = valid_files.get(path) {
-            if let Some(expected_size) = expected_size {
-                if *expected_size != 0 {
-                    return Ok(true)
-                }
+            if let Some(expected_size) = expected_size && *expected_size != 0 {
+                return Ok(true)
             }
         } else {
             return Ok(true)
