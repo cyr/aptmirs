@@ -75,6 +75,8 @@ impl Step<MirrorState> for DownloadRelease {
             let new_checksum = Checksum::checksum_file(release_file).await?;
 
             output.new_release = local_checksum != new_checksum;
+        } else {
+            output.new_release = true;
         }
 
         let mut release = Release::parse(release_file, &ctx.state.opts).await
@@ -99,7 +101,11 @@ impl Step<MirrorState> for DownloadRelease {
         file_progress.wait_for_completion(&mut processing_progress_bar).await;
         
         if release.files.is_empty() {
-            return Ok(StepResult::End(MirrorResult::ReleaseUnchanged))
+            if output.new_release {
+                return Ok(StepResult::End(MirrorResult::IrrelevantChanges))
+            } else {
+                return Ok(StepResult::End(MirrorResult::ReleaseUnchanged))
+            }
         }
 
         if let Some(release_components) = release.components() {
