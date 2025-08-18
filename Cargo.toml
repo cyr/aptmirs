@@ -2,7 +2,7 @@
 name = "aptmirs"
 description = "A simple tool for mirroring apt/deb repositories"
 authors = ["cyr"]
-version = "0.17.9"
+version = "0.17.10"
 edition = "2024"
 license = "MIT"
 readme = "README.md"
@@ -12,26 +12,26 @@ keywords = ["debian", "repository", "apt", "mirror"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ahash = "0.8.11"
-async-channel = "2.3.1"
-async-trait = "0.1.86"
+ahash = "0.8.12"
+async-channel = "2.5.0"
+async-trait = "0.1.89"
 bzip2 = "0.6.0"
-chrono = "0.4.39"
-clap = { version = "4.5.29", features = ["cargo", "derive", "env"] }
+chrono = "0.4.41"
+clap = { version = "4.5.45", features = ["cargo", "derive", "env"] }
 compact_str = { version = "0.9.0", features = ["serde"] }
 console = "0.16.0"
-flate2 = "1.0.35"
+flate2 = "1.1.2"
 hex = "0.4.3"
 indicatif = "0.18.0"
 md5 = "0.8.0"
 pathdiff = "0.2.3"
 pgp = "0.16.0"
 regex = "1.11.1"
-reqwest = { version = "0.12.12", default-features = false, features = ["rustls-tls-native-roots"] }
+reqwest = { version = "0.12.23", default-features = false, features = ["rustls-tls-native-roots"] }
 sha1 = "0.10.6"
-sha2 = "0.10.8"
-thiserror = "2.0.11"
-tokio = { version = "1.43.0", features = ["macros", "rt-multi-thread", "fs"] }
+sha2 = "0.10.9"
+thiserror = "2.0.15"
+tokio = { version = "1.47.1", features = ["macros", "rt-multi-thread", "fs"] }
 walkdir = "2.5.0"
 xz2 = "0.1.7"
 

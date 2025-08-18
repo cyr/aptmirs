@@ -75,38 +75,30 @@ impl Iterator for PackagesFile {
                 path = Some(filename.to_compact_string())
             } else if let Some(line_size) = line.strip_prefix("Size: ") {
                 size = Some(line_size.parse().expect("value of Size should be an integer"))
-            } else if let Some(line_hash) = line.strip_prefix("MD5Sum: ") {
-                if ChecksumType::is_stronger(&hash, ChecksumType::Md5) {
-                    let mut md5 = [0_u8; 16];
-                    if let Err(e) = hex::decode_to_slice(line_hash, &mut md5) {
-                        return Some(Err(e.into()))
-                    }   
-                    hash = Some(Checksum::Md5(md5))
+            } else if let Some(line_hash) = line.strip_prefix("MD5Sum: ") && ChecksumType::is_stronger(&hash, ChecksumType::Md5) {
+                let mut md5 = [0_u8; 16];
+                if let Err(e) = hex::decode_to_slice(line_hash, &mut md5) {
+                    return Some(Err(e.into()))
+                }   
+                hash = Some(Checksum::Md5(md5))
+            } else if let Some(line_hash) = line.strip_prefix("SHA1: ") && ChecksumType::is_stronger(&hash, ChecksumType::Sha1) {
+                let mut sha1 = [0_u8; 20];
+                if let Err(e) = hex::decode_to_slice(line_hash, &mut sha1) {
+                    return Some(Err(e.into()))
                 }
-            } else if let Some(line_hash) = line.strip_prefix("SHA1: ") {
-                if ChecksumType::is_stronger(&hash, ChecksumType::Sha1) {
-                    let mut sha1 = [0_u8; 20];
-                    if let Err(e) = hex::decode_to_slice(line_hash, &mut sha1) {
-                        return Some(Err(e.into()))
-                    }
-                    hash = Some(Checksum::Sha1(sha1))
+                hash = Some(Checksum::Sha1(sha1))
+            } else if let Some(line_hash) = line.strip_prefix("SHA256: ") && ChecksumType::is_stronger(&hash, ChecksumType::Sha256) {
+                let mut sha256 = [0_u8; 32];
+                if let Err(e) = hex::decode_to_slice(line_hash, &mut sha256) {
+                    return Some(Err(e.into()))
                 }
-            } else if let Some(line_hash) = line.strip_prefix("SHA256: ") {
-                if ChecksumType::is_stronger(&hash, ChecksumType::Sha256) {
-                    let mut sha256 = [0_u8; 32];
-                    if let Err(e) = hex::decode_to_slice(line_hash, &mut sha256) {
-                        return Some(Err(e.into()))
-                    }
-                    hash = Some(Checksum::Sha256(sha256))
+                hash = Some(Checksum::Sha256(sha256))
+            } else if let Some(line_hash) = line.strip_prefix("SHA512: ") && ChecksumType::is_stronger(&hash, ChecksumType::Sha512) {
+                let mut sha512 = [0_u8; 64];
+                if let Err(e) = hex::decode_to_slice(line_hash, &mut sha512) {
+                    return Some(Err(e.into()))
                 }
-            } else if let Some(line_hash) = line.strip_prefix("SHA512: ") {
-                if ChecksumType::is_stronger(&hash, ChecksumType::Sha512) {
-                    let mut sha512 = [0_u8; 64];
-                    if let Err(e) = hex::decode_to_slice(line_hash, &mut sha512) {
-                        return Some(Err(e.into()))
-                    }
-                    hash = Some(Checksum::Sha512(sha512))
-                }
+                hash = Some(Checksum::Sha512(sha512))
             }
         }
 
