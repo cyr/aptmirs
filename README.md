@@ -88,7 +88,7 @@ options. There are three operations: `mirror`, `prune` and `verify`.
 | --force        | -f           | FORCE=        | Ignore the current release and package files and assume all metadata is stale. |
 | --dl-threads   | -d           | DL_THREADS=   | The maximum number of concurrent mirror download tasks. *Works only with the `mirror` and `verify` commands*. [default: 8] |
 | --dry-run      | -d           |               | Prints the files that the prune operation would delete. *Works only with the `prune` command*. |
-| --mtime        | -m           | Set the mtime of all downloaded files to the Date field in the Release. |
+| --mtime        | -m           | Set the mtime of all downloaded files to the Date field in the Release. *Works only with the `mirror` command*. |
 | --output       | -o           | OUTPUT=       | The directory into where the mirrors will be downloaded. |
 | --pgp-key-path | -p           | PGP_KEY_PATH= | Path to folder where PGP public keys reside. All valid keys will be used in signature verification where applicable. |
 | --help         | -h           |               | Print help. |
