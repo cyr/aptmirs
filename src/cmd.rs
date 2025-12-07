@@ -20,7 +20,7 @@ pub type ContextWithSteps<T, R> = (ArcContext<T>, Vec<DynStep<T, R>>);
 pub enum Cmd {
     /// Mirrors the configured repositories. If no command is specified, this is the default behavior.
     Mirror {
-        #[clap(short, long, help = "Set the modified/ctime of all downloaded files to the Date field in the Release")]
+        #[clap(short, long, help = "Set the mtime of all downloaded files to the Date field in the Release")]
         mtime: bool
     },
     /// Verifies the downloaded mirror(s) against the mirror configuration and outputs a report

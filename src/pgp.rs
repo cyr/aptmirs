@@ -56,10 +56,6 @@ impl PgpKeyStore {
 
             let public_key = match read_public_key(&file) {
                 Ok(key) => Arc::new(key),
-                Err(MirsError::PgpKeyVerification { path, msg }) => {
-                    println!("{} WARNING: {path} is not valid and will not be used: {msg}", crate::now());
-                    continue
-                },
                 Err(e) => return Err(e)
             };
 

@@ -86,8 +86,9 @@ options. There are three operations: `mirror`, `prune` and `verify`.
 | ---------------| ------------ | ------------- | ----------- |
 | --config       | -c           | CONFIG=       | The path to the config file containing the mirror options. [default: /etc/apt/mirror.list] |
 | --force        | -f           | FORCE=        | Ignore the current release and package files and assume all metadata is stale. |
-| --dl-threads   | -d           | DL_THREADS=   | The maximum number of concurrent mirror download tasks. *Works only with the `mirror` and `prune` commands*. [default: 8] |
+| --dl-threads   | -d           | DL_THREADS=   | The maximum number of concurrent mirror download tasks. *Works only with the `mirror` and `verify` commands*. [default: 8] |
 | --dry-run      | -d           |               | Prints the files that the prune operation would delete. *Works only with the `prune` command*. |
+| --mtime        | -m           | Set the mtime of all downloaded files to the Date field in the Release. |
 | --output       | -o           | OUTPUT=       | The directory into where the mirrors will be downloaded. |
 | --pgp-key-path | -p           | PGP_KEY_PATH= | Path to folder where PGP public keys reside. All valid keys will be used in signature verification where applicable. |
 | --help         | -h           |               | Print help. |

@@ -118,9 +118,6 @@ pub enum MirsError {
     #[error("PGP key path error: {inner}")]
     PgpKeyStore { inner: walkdir::Error },
 
-    #[error("PGP key verification error for {path}: {msg}")]
-    PgpKeyVerification { path: FilePath, msg: String },
-
     #[error("unable to read PGP pub key: {inner}")]
     PgpPubKey { path: FilePath, inner: Box<MirsError> },
 
