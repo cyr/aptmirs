@@ -44,6 +44,7 @@ pub struct MirrorState {
     pub opts: Arc<MirrorOpts>,
     pub downloader: Downloader,
     pub pgp_key_store: Arc<PgpKeyStore>,
+    pub mtime: bool,
     pub output: Arc<Mutex<MirrorOutput>>
 }
 
@@ -163,8 +164,8 @@ impl Context<MirrorState> {
         steps
     }
 
-    pub fn create(opts: Vec<MirrorOpts>, cli_opts: Arc<CliOpts>, pgp_key_store: Arc<PgpKeyStore>) -> Result<Vec<(MirrorContext, Vec<MirrorDynStep>)>> {
-        let downloader = Downloader::build(cli_opts.dl_threads);
+    pub fn create(opts: Vec<MirrorOpts>, cli_opts: Arc<CliOpts>, pgp_key_store: Arc<PgpKeyStore>, mtime: bool) -> Result<Vec<(MirrorContext, Vec<MirrorDynStep>)>> {
+        let downloader = Downloader::build(cli_opts.dl_threads, mtime);
 
         opts.into_iter()
             .map(|o| {
@@ -179,6 +180,7 @@ impl Context<MirrorState> {
                     opts: Arc::new(o),
                     downloader: downloader.clone(),
                     pgp_key_store: pgp_key_store.clone(),
+                    mtime,
                     ..Default::default()
                 };
 

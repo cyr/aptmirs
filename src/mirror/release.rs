@@ -1,9 +1,9 @@
-use std::sync::Arc;
+use std::{fs::File, sync::Arc};
 
 use async_trait::async_trait;
 use compact_str::format_compact;
 
-use crate::{context::Context, downloader::Download, error::{MirsError, Result}, log, metadata::{checksum::Checksum, release::Release, repository::{INRELEASE_FILE_NAME, RELEASE_FILE_NAME}, FilePath}, mirror::MirrorResult, pgp::verify_release_signature, progress::Progress, step::{Step, StepResult}};
+use crate::{context::Context, downloader::{Download, time_from_atomic}, error::{MirsError, Result}, metadata::{FilePath, checksum::Checksum, release::Release, repository::{INRELEASE_FILE_NAME, RELEASE_FILE_NAME}}, mirror::MirrorResult, pgp::verify_release_signature, progress::Progress, step::{Step, StepResult}};
 
 use super::MirrorState;
 
@@ -24,7 +24,7 @@ impl Step<MirrorState> for DownloadRelease {
     async fn execute(&self, ctx: Arc<Context<MirrorState>>) -> Result<StepResult<Self::Result>> {
         let mut output = ctx.state.output.lock().await;
 
-        let mut progress_bar = ctx.progress.create_download_progress_bar().await;
+        let progress_bar = ctx.progress.create_download_progress_bar().await;
 
         let mut files = Vec::with_capacity(3);
 
@@ -42,14 +42,9 @@ impl Step<MirrorState> for DownloadRelease {
                 always_download: true
             });
 
-            let download_res = ctx.state.downloader.download(dl).await;
+            ctx.state.downloader.download(dl).await;
 
-            ctx.progress.update_for_files(&mut progress_bar);
-
-            if let Err(e) = download_res {
-                log(e.to_string());
-                continue
-            }
+            ctx.progress.update_for_files(&progress_bar);
 
             files.push(destination);
         }
@@ -93,12 +88,12 @@ impl Step<MirrorState> for DownloadRelease {
         let file_progress = Progress::new_with_step(0, "Verifying existing");
         file_progress.bytes.inc_total(total_meta_size);
 
-        let mut processing_progress_bar = file_progress.create_processing_progress_bar().await;
+        let processing_progress_bar = file_progress.create_processing_progress_bar().await;
 
         let dist_root = FilePath(format_compact!("{}/{}", ctx.state.repo.root_dir, ctx.state.opts.dist_part()));
         release.prune_existing(dist_root.as_str(), file_progress.clone()).await?;
 
-        file_progress.wait_for_completion(&mut processing_progress_bar).await;
+        file_progress.wait_for_completion(&processing_progress_bar).await;
         
         if release.files.is_empty() {
             if output.new_release {
@@ -119,7 +114,17 @@ impl Step<MirrorState> for DownloadRelease {
                 }
             }
         }
+        
+        if ctx.state.mtime && let Some(time_to_set) = release.release_time() {
+            ctx.state.downloader.set_time(time_to_set);
 
+            let system_time = time_from_atomic(ctx.state.downloader.time_to_set.clone());
+
+            for f in files.into_iter().filter(FilePath::exists) {
+                File::open(f)?.set_modified(system_time)?;
+            }
+        }
+        
         output.total_bytes_downloaded += ctx.progress.bytes.success();
         output.release = Some(release);
 

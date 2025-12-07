@@ -1,5 +1,5 @@
 
-use std::{path::Path, sync::Arc};
+use std::{fs::FileTimes, path::Path, sync::{atomic::{AtomicU64, Ordering}, Arc}, time::{Duration, SystemTime, UNIX_EPOCH}};
 
 use async_channel::{bounded, Sender, Receiver};
 use compact_str::{CompactString, ToCompactString};
@@ -10,12 +10,22 @@ use crate::{error::{MirsError, Result}, metadata::{checksum::Checksum, FilePath}
 
 use super::progress::Progress;
 
+fn now() -> Arc<AtomicU64> {
+    Arc::new(SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("now should always be after unix epoch")
+        .as_secs().into()
+    )
+}
+
 #[derive(Clone)]
 pub struct Downloader {
     sender: Sender<Box<Download>>,
     _tasks: Arc<Vec<JoinHandle<()>>>,
     progress: Progress,
-    http_client: Client
+    http_client: Client,
+    pub time_to_set: Arc<AtomicU64>,
+    mtime: bool,
 }
 
 impl Default for Downloader {
@@ -25,27 +35,32 @@ impl Default for Downloader {
             sender,
             _tasks: Default::default(),
             progress: Default::default(),
-            http_client: Default::default()
+            http_client: Default::default(),
+            time_to_set: now(),
+            mtime: false
         }
     }
 }
 
 impl Downloader {
-    pub fn build(num_threads: u8) -> Self {
+    pub fn build(num_threads: u8, mtime: bool) -> Self {
         let (sender, receiver) = bounded(1024);
 
         let mut tasks = Vec::with_capacity(num_threads as usize);
         let progress = Progress::new();
         let http_client = reqwest::Client::new();
 
+        let time_to_set = now();
+
         for _ in 0..num_threads {
             let task_receiver: Receiver<Box<Download>> = receiver.clone();
             let task_progress = progress.clone();
             let task_http_client = http_client.clone();
+            let task_time = if mtime { Some(time_to_set.clone()) } else { None };
 
             let handle = tokio::spawn(async move {
                 while let Ok(dl) = task_receiver.recv().await {
-                    _ = Downloader::download_and_track(&task_http_client, task_progress.clone(), dl).await;
+                    _ = Downloader::download_and_track(&task_http_client, task_time.clone(), task_progress.clone(), dl).await;
                 }
             });
 
@@ -56,7 +71,9 @@ impl Downloader {
             sender,
             _tasks: Arc::new(tasks),
             progress,
-            http_client
+            http_client,
+            time_to_set,
+            mtime
         }
     }
 
@@ -72,10 +89,10 @@ impl Downloader {
         Ok(())
     }
 
-    async fn download_and_track(http_client: &Client, progress: Progress, dl: Box<Download>) -> Result<()> {
+    async fn download_and_track(http_client: &Client, time: Option<Arc<AtomicU64>>, progress: Progress, dl: Box<Download>) {
         let file_size = dl.size;
         
-        match download_file(http_client, dl, 
+        match download_file(http_client, time, dl,
             |downloaded| progress.bytes.inc_success(downloaded)
         ).await {
             Ok(true) => progress.files.inc_success(1),
@@ -94,20 +111,23 @@ impl Downloader {
                 }
             }
         }
-
-        Ok(())
     }
 
-    pub async fn download(&self, download: Box<Download>) -> Result<()> {
-        Downloader::download_and_track(&self.http_client, self.progress.clone(), download).await
+    pub async fn download(&self, download: Box<Download>) {
+        let time = if self.mtime { Some(self.time_to_set.clone()) } else { None } ;
+        Downloader::download_and_track(&self.http_client, time, self.progress.clone(), download).await
     }
 
     pub fn progress(&self) -> Progress {
         self.progress.clone()
     }
+
+    pub fn set_time(&self, new_time: u64) {
+        self.time_to_set.store(new_time, Ordering::Relaxed);
+    }
 }
 
-async fn download_file<F>(http_client: &Client, download: Box<Download>, mut progress_cb: F) -> Result<bool>
+async fn download_file<F>(http_client: &Client, time: Option<Arc<AtomicU64>>, download: Box<Download>, mut progress_cb: F) -> Result<bool>
     where F: FnMut(u64) {
     
     let mut downloaded = false;
@@ -120,7 +140,7 @@ async fn download_file<F>(http_client: &Client, download: Box<Download>, mut pro
         if download.size.is_some_and(|v| v > 0) || download.size.is_none() {
             let mut response = http_client.get(download.url.as_str()).send().await?;
 
-            if response.status() == StatusCode::NOT_FOUND {
+            if response.status() != StatusCode::OK {
                 drop(output);
                 tokio::fs::remove_file(&download.primary_target_path).await?;
                 return Err(MirsError::Download { url: download.url.clone(), status_code: response.status() })
@@ -154,9 +174,17 @@ async fn download_file<F>(http_client: &Client, download: Box<Download>, mut pro
                     progress_cb(chunk.len() as u64);
                 }
             }
-        
+
             output.flush().await?;
             downloaded = true;
+            
+            if let Some(time_to_set) = time {
+                let time = time_from_atomic(time_to_set);
+                let std_file = output.into_std().await;
+                tokio::task::spawn_blocking(move || {
+                    std_file.set_times(FileTimes::new().set_modified(time))
+                }).await??;
+            }
         }
     }
 
@@ -176,6 +204,11 @@ async fn download_file<F>(http_client: &Client, download: Box<Download>, mut pro
     }
     
     Ok(downloaded)
+}
+
+pub fn time_from_atomic(time: Arc<AtomicU64>) -> SystemTime {
+    SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(time.load(Ordering::Relaxed)))
+        .expect("reversing stored timestamp should always be safe")
 }
 
 pub async fn create_dirs<P: AsRef<Path>>(path: P) -> Result<()> {

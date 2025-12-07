@@ -1,5 +1,6 @@
-use std::{path::{Path, Component}, collections::{BTreeMap, BTreeSet}};
+use std::{collections::{BTreeMap, BTreeSet}, path::{Component, Path}};
 
+use chrono::DateTime;
 use compact_str::{format_compact, CompactString, ToCompactString};
 use tokio::{fs::File, io::{BufReader, AsyncBufReadExt}};
 
@@ -127,6 +128,16 @@ impl Release {
         self.map.get("Acquire-By-Hash")
             .map(|v| v.as_str() == "yes")
             .unwrap_or(false)
+    }
+
+    pub fn release_time(&self) -> Option<u64> {
+        let release_date_field = self.map.get("Date")?;
+
+        let dt = chrono::NaiveDateTime::parse_from_str(release_date_field, "%a, %d %b %Y %H:%M:%S UTC").ok()?;
+
+        let timestamp = (dt.and_utc() - DateTime::UNIX_EPOCH).num_seconds() as u64;
+
+        Some(timestamp)
     }
 
     pub fn components(&self) -> Option<&CompactString> {
@@ -425,7 +436,7 @@ impl FileEntry {
         } else if let Some(hash) = self.sha1 {
             Some(hash.into())
         } else {
-            self.md5.map(|v| v.into())
+            self.md5.map(Checksum::from)
         }
     }
 

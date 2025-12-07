@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::fs::File;
 use std::sync::Arc;
 
-use pgp::composed::{Deserializable, SignedPublicKey, SignedPublicSubKey, StandaloneSignature, CleartextSignedMessage};
+use pgp::composed::{CleartextSignedMessage, Deserializable, DetachedSignature, SignedPublicKey, SignedPublicSubKey};
 use pgp::types::KeyDetails;
 use walkdir::WalkDir;
 
@@ -91,7 +91,7 @@ impl PgpKeyStore {
 
 pub trait KeyStore {
     fn verify_inlined_signed_release(&self, msg: &CleartextSignedMessage, content: &str) -> Result<()>;
-    fn verify_release_with_standalone_signature(&self, signature: &StandaloneSignature, content: &str) -> Result<()>;
+    fn verify_release_with_standalone_signature(&self, signature: &DetachedSignature, content: &str) -> Result<()>;
 
     fn verify_inlined(&self, inlined_message: &FilePath) -> Result<()> {
         let content = std::fs::read_to_string(inlined_message)?;
@@ -106,7 +106,7 @@ pub trait KeyStore {
         let sign_handle = File::open(signature)?;
         let content = std::fs::read_to_string(message)?;
 
-        let (signature, _) = StandaloneSignature::from_reader_single(&sign_handle)?;
+        let (signature, _) = DetachedSignature::from_reader_single(&sign_handle)?;
 
         self.verify_release_with_standalone_signature(&signature, &content)
     }
@@ -115,7 +115,7 @@ pub trait KeyStore {
 impl KeyStore for PgpKeyStore {
     fn verify_inlined_signed_release(&self, msg: &CleartextSignedMessage, content: &str) -> Result<()> {
         for signature in msg.signatures() {
-            if signature.signature.issuer_fingerprint().is_empty() && signature.signature.issuer().is_empty() {
+            if signature.issuer_fingerprint().is_empty() && signature.issuer().is_empty() {
                 for key in self.primary_key_ids.values() {
                     if signature.verify(key.as_ref(), content.as_bytes()).is_ok() {
                         return Ok(())
@@ -131,7 +131,7 @@ impl KeyStore for PgpKeyStore {
                 continue
             }
 
-            for fingerprint in signature.signature.issuer_fingerprint() {
+            for fingerprint in signature.issuer_fingerprint() {
                 let hex_fingerprint = hex::encode(fingerprint.as_bytes());
 
                 if let Some(key) = self.primary_fingerprints.get(&hex_fingerprint) && signature.verify(key.as_ref(), content.as_bytes()).is_ok() {
@@ -143,7 +143,7 @@ impl KeyStore for PgpKeyStore {
                 }
             }
 
-            for key_id in signature.signature.issuer() {
+            for key_id in signature.issuer() {
                 let hex_key_id = hex::encode(key_id.as_ref());
 
                 if let Some(key) = self.primary_key_ids.get(&hex_key_id) && signature.verify(key.as_ref(), content.as_bytes()).is_ok() {
@@ -159,7 +159,7 @@ impl KeyStore for PgpKeyStore {
         Err(MirsError::PgpNotVerified)
     }
     
-    fn verify_release_with_standalone_signature(&self, signature: &StandaloneSignature, content: &str) -> Result<()> {
+    fn verify_release_with_standalone_signature(&self, signature: &DetachedSignature, content: &str) -> Result<()> {
         if signature.signature.issuer_fingerprint().is_empty() && signature.signature.issuer().is_empty() {
             for key in self.primary_key_ids.values() {
                 if signature.verify(key.as_ref(), content.as_bytes()).is_ok() {
@@ -213,9 +213,7 @@ pub fn read_public_key(path: &FilePath) -> Result<SignedPublicKey> {
     let (signed_public_key, _) = SignedPublicKey::from_reader_single(&key_file)
         .map_err(|e| MirsError::PgpPubKey { path: path.clone(), inner: Box::new(e.into()) })?;
 
-    if let Some(expiry_date) = signed_public_key.expires_at() && expiry_date < chrono::Utc::now() {
-        return Err(MirsError::PgpKeyVerification { path: path.clone(), msg: String::from("public key is expired") })
-    }
+    signed_public_key.verify()?;
 
     Ok(signed_public_key)
 }

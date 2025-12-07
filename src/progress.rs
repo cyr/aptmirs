@@ -131,19 +131,19 @@ impl Progress {
             .with_prefix(prefix)
     }
 
-    pub fn update_for_count(&self, progress_bar: &mut ProgressBar) {
+    pub fn update_for_count(&self, progress_bar: &ProgressBar) {
         progress_bar.set_length(self.bytes.total());
         progress_bar.set_position(self.bytes.success());
         progress_bar.set_message(self.files.success().to_compact_string());
     }
 
-    pub fn update_for_files(&self, progress_bar: &mut ProgressBar) {
+    pub fn update_for_files(&self, progress_bar: &ProgressBar) {
         progress_bar.set_length(self.files.total());
         progress_bar.set_position(self.files.total() - self.files.remaining());
         progress_bar.set_message(HumanBytes(self.bytes.success()).to_compact_string());
     }
 
-    pub fn update_for_bytes(&self, progress_bar: &mut ProgressBar) {
+    pub fn update_for_bytes(&self, progress_bar: &ProgressBar) {
         progress_bar.set_length(self.bytes.total());
         progress_bar.set_position(self.bytes.success());
         progress_bar.set_message(HumanBytes(self.bytes.success()).to_compact_string());
@@ -169,7 +169,7 @@ impl Progress {
         self.step.fetch_add(1, Ordering::SeqCst);
     }
     
-    pub async fn wait_for_completion(&self, progress_bar: &mut ProgressBar)  {
+    pub async fn wait_for_completion(&self, progress_bar: &ProgressBar)  {
         while self.files.remaining() > 0 {
             self.update_for_files(progress_bar);
             sleep(Duration::from_millis(100)).await

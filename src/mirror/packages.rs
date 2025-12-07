@@ -30,8 +30,8 @@ impl Step<MirrorState> for DownloadFromPackageIndices {
         let file_progress = Progress::new_with_step(0, "Processing indices");
         let dl_progress = ctx.state.downloader.progress();
 
-        let mut file_progress_bar = multi_bar.add(file_progress.create_processing_progress_bar().await);
-        let mut dl_progress_bar = multi_bar.add(dl_progress.create_download_progress_bar().await);
+        let file_progress_bar = multi_bar.add(file_progress.create_processing_progress_bar().await);
+        let dl_progress_bar = multi_bar.add(dl_progress.create_download_progress_bar().await);
 
         let packages_files = output.take_metadata(
                 |f| matches!(f, MetadataFile::Packages(..) | MetadataFile::Sources(..) )
@@ -48,7 +48,7 @@ impl Step<MirrorState> for DownloadFromPackageIndices {
 
         let task_downloader = ctx.state.downloader.clone();
         let task_repo = ctx.state.repo.clone();
-        let mut task_dl_progress_bar = dl_progress_bar.clone();
+        let task_dl_progress_bar = dl_progress_bar.clone();
         let task_dl_progress = dl_progress.clone();
 
         spawn_blocking(move || {
@@ -56,7 +56,7 @@ impl Step<MirrorState> for DownloadFromPackageIndices {
             
             for packages_file in packages_files {
                 let counter = packages_file.counter();
-                file_progress.update_for_bytes(&mut file_progress_bar);
+                file_progress.update_for_bytes(&file_progress_bar);
                 let package_size = packages_file.size();
         
                 for package in packages_file {
@@ -69,18 +69,18 @@ impl Step<MirrorState> for DownloadFromPackageIndices {
                     
                     file_progress.bytes.set_success(counter.load(Ordering::SeqCst) + incremental_size_base);
         
-                    task_dl_progress.update_for_files(&mut task_dl_progress_bar);
-                    file_progress.update_for_bytes(&mut file_progress_bar);
+                    task_dl_progress.update_for_files(&task_dl_progress_bar);
+                    file_progress.update_for_bytes(&file_progress_bar);
                 }
         
                 incremental_size_base += package_size;
-                file_progress.update_for_bytes(&mut file_progress_bar);
+                file_progress.update_for_bytes(&file_progress_bar);
             }
 
             Ok::<(), MirsError>(())
         }).await??;
 
-        dl_progress.wait_for_completion(&mut dl_progress_bar).await;
+        dl_progress.wait_for_completion(&dl_progress_bar).await;
 
         output.total_bytes_downloaded += ctx.progress.bytes.success();
         output.total_packages_downloaded += ctx.progress.files.success();

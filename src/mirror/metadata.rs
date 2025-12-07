@@ -29,7 +29,7 @@ impl Step<MirrorState> for DownloadMetadata {
             return Err(MirsError::NoReleaseFile)
         };
 
-        let mut progress_bar = ctx.progress.create_download_progress_bar().await;
+        let progress_bar = ctx.progress.create_download_progress_bar().await;
 
         let by_hash = release.acquire_by_hash();
 
@@ -79,7 +79,7 @@ impl Step<MirrorState> for DownloadMetadata {
             ctx.state.downloader.queue(download).await?;
         }
 
-        ctx.progress.wait_for_completion(&mut progress_bar).await;
+        ctx.progress.wait_for_completion(&progress_bar).await;
 
         if ctx.progress.files.failed() > 0 {
             return Err(MirsError::InconsistentRepository { progress: ctx.progress.files.clone() })

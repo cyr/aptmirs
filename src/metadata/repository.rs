@@ -1,7 +1,7 @@
 use std::{str::FromStr, sync::Arc};
 
 use compact_str::{format_compact, CompactString, ToCompactString};
-use pgp::composed::{SignedPublicKey, StandaloneSignature, CleartextSignedMessage};
+use pgp::composed::{CleartextSignedMessage, DetachedSignature, SignedPublicKey};
 use reqwest::Url;
 
 use crate::{config::MirrorOpts, downloader::Download, error::{MirsError, Result}, metadata::{checksum::Checksum, release::FileEntry, FilePath, IndexFileEntry}, pgp::{read_public_key, KeyStore}, CliOpts};
@@ -226,7 +226,7 @@ impl KeyStore for Repository {
         Err(MirsError::PgpNotVerified)
     }
 
-    fn verify_release_with_standalone_signature(&self, signature: &StandaloneSignature, content: &str) -> Result<()> {
+    fn verify_release_with_standalone_signature(&self, signature: &DetachedSignature, content: &str) -> Result<()> {
         let Some(key) = &self.pgp_pub_key else {
             return Err(MirsError::PgpNotVerified)
         };

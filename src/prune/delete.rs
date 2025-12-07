@@ -27,7 +27,7 @@ impl Step<PruneState> for Delete {
     async fn execute(&self, ctx: Arc<Context<PruneState>>) -> Result<StepResult<Self::Result>> {
         let (_, repo) = ctx.state.mirrors.first().expect("there should be a mirror on prune");
 
-        let mut progress_bar = ctx.progress.create_unbounded_progress_bar().await;
+        let progress_bar = ctx.progress.create_unbounded_progress_bar().await;
         
         let mut output = ctx.state.output.lock().await;
 
@@ -62,7 +62,7 @@ impl Step<PruneState> for Delete {
                 ctx.progress.bytes.inc_skipped(size);
             }
 
-            ctx.progress.update_for_files(&mut progress_bar);
+            ctx.progress.update_for_files(&progress_bar);
         }
 
         progress_bar.abandon();

@@ -27,7 +27,7 @@ impl Step<VerifyState> for Verify {
         let progress = ctx.progress.clone();
         let mut output = ctx.state.output.lock().await;
 
-        let mut progress_bar = progress.create_download_progress_bar().await;
+        let progress_bar = progress.create_download_progress_bar().await;
 
         let dist_root = FilePath(format_compact!("{}/{}", ctx.state.repo.root_dir, ctx.state.opts.dist_part()));
 
@@ -75,7 +75,7 @@ impl Step<VerifyState> for Verify {
         let task_verifier = ctx.state.verifier.clone();
         let task_progress = progress.clone();
         let task_repo = ctx.state.repo.clone();
-        let mut task_progress_bar = progress_bar.clone();
+        let task_progress_bar = progress_bar.clone();
         
         spawn_blocking(move || {
             let async_handle = Handle::current();
@@ -102,14 +102,14 @@ impl Step<VerifyState> for Verify {
                         task_verifier.queue(verify_task).await
                     })?;
 
-                    task_progress.update_for_files(&mut task_progress_bar);
+                    task_progress.update_for_files(&task_progress_bar);
                 }
             }
 
             Ok::<(), MirsError>(())
         }).await??;
         
-        progress.wait_for_completion(&mut progress_bar).await;
+        progress.wait_for_completion(&progress_bar).await;
 
         output.total_corrupt = progress.files.failed();
         output.total_missing = progress.files.skipped();

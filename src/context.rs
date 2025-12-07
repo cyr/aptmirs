@@ -4,7 +4,7 @@ use crate::cmd::{CmdResult, CmdState};
 use crate::{progress::Progress, CliOpts};
 
 #[derive(Clone)]
-pub struct Context<T> where T: CmdState<Result: CmdResult> {
+pub struct Context<T> {
     pub progress: Progress,
     pub cli_opts: Arc<CliOpts>,
     pub state: T

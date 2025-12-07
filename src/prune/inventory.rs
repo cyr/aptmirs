@@ -24,10 +24,10 @@ impl Step<PruneState> for Inventory {
     }
 
     async fn execute(&self, ctx: Arc<Context<PruneState>>) -> Result<StepResult<Self::Result>> {
-        let mut progress = ctx.progress.clone();
+        let progress = ctx.progress.clone();
         let mut state = ctx.state.output.lock().await;
 
-        let mut progress_bar = progress.create_count_progress_bar().await;
+        let progress_bar = progress.create_count_progress_bar().await;
 
         let mut incremental_size_base = 0;
 
@@ -47,7 +47,7 @@ impl Step<PruneState> for Inventory {
             let mut metadata: Vec<(MetadataFile, FileEntry)> = release.into_iter().collect();
 
             for f in release_files {
-                add_valid_metadata_file(&mut progress, &mut state.files, &f, None, repo);
+                add_valid_metadata_file(&progress, &mut state.files, &f, None, repo);
             }
 
             for (metadata_file, file_entry) in &mut metadata {
@@ -56,10 +56,10 @@ impl Step<PruneState> for Inventory {
                 let size = file_entry.size;
                 let (_, primary, other) = file_entry.into_paths(metadata_file.path(), by_hash)?;
 
-                add_valid_metadata_file(&mut progress, &mut state.files, &primary, Some(size), repo);
+                add_valid_metadata_file(&progress, &mut state.files, &primary, Some(size), repo);
 
                 for f in other {
-                    add_valid_metadata_file(&mut progress, &mut state.files, &f, Some(size), repo);
+                    add_valid_metadata_file(&progress, &mut state.files, &f, Some(size), repo);
                 }
             }
 
@@ -98,11 +98,11 @@ impl Step<PruneState> for Inventory {
 
                     let path = base_path.join(entry.path);
 
-                    add_valid_file(&mut progress, &mut state.files, path, entry.size);
+                    add_valid_file(&progress, &mut state.files, path, entry.size);
 
                     progress.bytes.set_success(counter.load(Ordering::SeqCst) + incremental_size_base);
 
-                    progress.update_for_count(&mut progress_bar);
+                    progress.update_for_count(&progress_bar);
                 }
 
                 incremental_size_base += meta_file_size;
@@ -115,13 +115,13 @@ impl Step<PruneState> for Inventory {
     }
 }
 
-fn add_valid_metadata_file(progress: &mut Progress, files: &mut HashMap<FilePath, Option<u64>>, file: &FilePath, size: Option<u64>, repo: &Repository) {
+fn add_valid_metadata_file(progress: &Progress, files: &mut HashMap<FilePath, Option<u64>>, file: &FilePath, size: Option<u64>, repo: &Repository) {
     let path = repo.strip_root(file.as_str());
 
     add_valid_file(progress, files, path.into(), size);
 }
 
-fn add_valid_file(progress: &mut Progress, files: &mut HashMap<FilePath, Option<u64>>, file: FilePath, size: Option<u64>) {
+fn add_valid_file(progress: &Progress, files: &mut HashMap<FilePath, Option<u64>>, file: FilePath, size: Option<u64>) {
     if files.insert(file, size).is_none() {
         progress.files.inc_success(1);
     }

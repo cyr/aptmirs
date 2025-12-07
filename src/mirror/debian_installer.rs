@@ -24,7 +24,7 @@ impl Step<MirrorState> for DownloadDebianInstaller {
     }
     
     async fn execute(&self, ctx: Arc<Context<MirrorState>>) -> Result<StepResult<Self::Result>> {
-        let mut progress_bar = ctx.progress.create_download_progress_bar().await;
+        let progress_bar = ctx.progress.create_download_progress_bar().await;
     
         let mut output = ctx.state.output.lock().await;
 
@@ -81,10 +81,10 @@ impl Step<MirrorState> for DownloadDebianInstaller {
             Ok::<Vec<FilePath>, MirsError>(files_to_delete)
         }).await??;
 
-        ctx.progress.wait_for_completion(&mut progress_bar).await;
+        ctx.progress.wait_for_completion(&progress_bar).await;
 
         output.total_bytes_downloaded += ctx.progress.bytes.success();
-        output.delete_paths.extend(old_files.into_iter());
+        output.delete_paths.extend(old_files);
 
         Ok(StepResult::Continue)
     }

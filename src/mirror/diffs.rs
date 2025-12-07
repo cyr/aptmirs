@@ -25,7 +25,7 @@ impl Step<MirrorState> for DownloadFromDiffs {
     async fn execute(&self, ctx: Arc<Context<MirrorState>>) -> Result<StepResult<Self::Result>> {
         let mut output = ctx.state.output.lock().await;
         
-        let mut progress_bar = ctx.progress.create_download_progress_bar().await;
+        let progress_bar = ctx.progress.create_download_progress_bar().await;
 
         let diff_indices = output.take_metadata(
                 |f| matches!(f, MetadataFile::DiffIndex(..) )
@@ -60,7 +60,7 @@ impl Step<MirrorState> for DownloadFromDiffs {
             Ok::<(), MirsError>(())
         }).await??;
 
-        ctx.progress.wait_for_completion(&mut progress_bar).await;
+        ctx.progress.wait_for_completion(&progress_bar).await;
 
         output.total_bytes_downloaded += ctx.progress.bytes.success();
         

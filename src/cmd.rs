@@ -15,12 +15,14 @@ pub type DynStep<T, R> = Box<dyn Step<T, Result = R>>;
 pub type ArcContext<T> = Arc<Context<T>>;
 pub type ContextWithSteps<T, R> = (ArcContext<T>, Vec<DynStep<T, R>>);
 
-#[derive(Parser, Clone, Copy, Default)]
+#[derive(Parser, Clone, Copy)]
 #[command()]
 pub enum Cmd {
-    #[default]
     /// Mirrors the configured repositories. If no command is specified, this is the default behavior.
-    Mirror,
+    Mirror {
+        #[clap(short, long, help = "Set the modified/ctime of all downloaded files to the Date field in the Release")]
+        mtime: bool
+    },
     /// Verifies the downloaded mirror(s) against the mirror configuration and outputs a report
     Verify,
     /// Removes unreferenced files in the downloaded mirror(s)  
@@ -30,11 +32,17 @@ pub enum Cmd {
     }
 }
 
+impl Default for Cmd {
+    fn default() -> Self {
+        Cmd::Mirror { mtime: false }
+    }
+}
+
 
 impl Display for Cmd {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Cmd::Mirror => f.write_str("Mirroring"),
+            Cmd::Mirror { .. } => f.write_str("Mirroring"),
             Cmd::Verify => f.write_str("Verifying"),
             Cmd::Prune { .. } => f.write_str("Pruning"),
         }
@@ -44,8 +52,8 @@ impl Display for Cmd {
 impl Cmd {
     pub async fn execute(self, opts: Vec<MirrorOpts>, cli_opts: Arc<CliOpts>, pgp_key_store: Arc<PgpKeyStore>) -> Result<()> {
         match self {
-            Cmd::Mirror => {
-                let ctxs = Context::<MirrorState>::create(opts, cli_opts, pgp_key_store)?;
+            Cmd::Mirror { mtime } => {
+                let ctxs = Context::<MirrorState>::create(opts, cli_opts, pgp_key_store, mtime)?;
                 self.run_all(ctxs).await;
             },
             Cmd::Prune { dry_run } => {
