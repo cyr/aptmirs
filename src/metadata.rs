@@ -1,20 +1,31 @@
-use std::{borrow::Borrow, fmt::Display, fs::Metadata, io::{BufRead, BufReader, Read}, path::{Path, PathBuf}, str::FromStr, sync::{atomic::{AtomicU64, Ordering}, Arc}};
+use std::{
+    borrow::Borrow,
+    fmt::Display,
+    fs::Metadata,
+    io::{BufRead, BufReader, Read},
+    path::{Path, PathBuf},
+    str::FromStr,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+};
 
-use compact_str::{format_compact, CompactString, ToCompactString};
+use compact_str::{CompactString, ToCompactString, format_compact};
 use metadata_file::MetadataFile;
 
-use crate::error::{Result, MirsError};
+use crate::error::{MirsError, Result};
 
 use self::checksum::Checksum;
 
-pub mod release;
-pub mod packages_file;
-pub mod sources_file;
 pub mod checksum;
 pub mod diff_index_file;
-pub mod sum_file;
-pub mod repository;
 pub mod metadata_file;
+pub mod packages_file;
+pub mod release;
+pub mod repository;
+pub mod sources_file;
+pub mod sum_file;
 
 #[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord, Default, Hash)]
 pub struct FilePath(pub CompactString);
@@ -41,13 +52,24 @@ impl From<&str> for FilePath {
 
 impl From<PathBuf> for FilePath {
     fn from(value: PathBuf) -> Self {
-        Self(CompactString::from(value.into_os_string().into_string().expect("file paths should be utf8")))
+        Self(CompactString::from(
+            value
+                .into_os_string()
+                .into_string()
+                .expect("file paths should be utf8"),
+        ))
     }
 }
 
 impl From<&Path> for FilePath {
     fn from(value: &Path) -> Self {
-        Self(value.as_os_str().to_str().expect("file paths should be utf8").to_compact_string())
+        Self(
+            value
+                .as_os_str()
+                .to_str()
+                .expect("file paths should be utf8")
+                .to_compact_string(),
+        )
     }
 }
 
@@ -117,7 +139,8 @@ impl FilePath {
     pub fn extension(&self) -> Option<&str> {
         let p: &Path = self.as_ref();
 
-        p.extension().map(|v| v.to_str().expect("path extensions should be utf8"))
+        p.extension()
+            .map(|v| v.to_str().expect("path extensions should be utf8"))
     }
 
     pub fn metadata(&self) -> std::result::Result<Metadata, std::io::Error> {
@@ -128,7 +151,7 @@ impl FilePath {
 
     pub fn parent(&self) -> Option<&str> {
         let split_iter = self.0.rsplit_once('/')?;
-        
+
         Some(split_iter.0)
     }
 
@@ -145,18 +168,18 @@ impl FilePath {
             None => match other.strip_prefix("./") {
                 Some(s) => s,
                 None => other,
-            }
+            },
         };
 
         if first.is_empty() {
-            return FilePath::from(other)
+            return FilePath::from(other);
         }
 
         FilePath(format_compact!("{first}/{other}"))
     }
 }
 
-pub trait IndexFileEntryIterator : Iterator<Item = Result<IndexFileEntry>> + Send {
+pub trait IndexFileEntryIterator: Iterator<Item = Result<IndexFileEntry>> + Send {
     fn size(&self) -> u64;
     fn counter(&self) -> Arc<AtomicU64>;
     fn file(&self) -> &MetadataFile;
@@ -166,11 +189,11 @@ pub trait IndexFileEntryIterator : Iterator<Item = Result<IndexFileEntry>> + Sen
 pub struct IndexFileEntry {
     pub path: CompactString,
     pub size: Option<u64>,
-    pub checksum: Option<Checksum>
+    pub checksum: Option<Checksum>,
 }
 pub struct TrackingReader<R: Read> {
     inner: R,
-    read: Arc<AtomicU64>
+    read: Arc<AtomicU64>,
 }
 
 impl<R: Read> Read for TrackingReader<R> {
@@ -185,7 +208,10 @@ impl<R: Read> Read for TrackingReader<R> {
     }
 }
 
-pub fn create_reader<R: Read + Send + 'static>(file: R, path: &FilePath) -> Result<(Box<dyn BufRead + Send>, Arc<AtomicU64>)> {
+pub fn create_reader<R: Read + Send + 'static>(
+    file: R,
+    path: &FilePath,
+) -> Result<(Box<dyn BufRead + Send>, Arc<AtomicU64>)> {
     let counter = Arc::new(AtomicU64::from(0));
 
     let file_reader = TrackingReader {
@@ -196,20 +222,22 @@ pub fn create_reader<R: Read + Send + 'static>(file: R, path: &FilePath) -> Resu
     let reader: Box<dyn BufRead + Send> = match path.extension() {
         Some("xz") => {
             let xz_decoder = xz2::read::XzDecoder::new_multi_decoder(file_reader);
-            Box::new(BufReader::with_capacity(1024*1024, xz_decoder))
+            Box::new(BufReader::with_capacity(1024 * 1024, xz_decoder))
         }
         Some("gz") => {
             let gz_decoder = flate2::read::GzDecoder::new(file_reader);
-            Box::new(BufReader::with_capacity(1024*1024, gz_decoder))
-        },
+            Box::new(BufReader::with_capacity(1024 * 1024, gz_decoder))
+        }
         Some("bz2") => {
             let bz2_decoder = bzip2::read::BzDecoder::new(file_reader);
-            Box::new(BufReader::with_capacity(1024*1024, bz2_decoder))
-        },
-        None => {
-            Box::new(BufReader::with_capacity(1024*1024, file_reader))
-        },
-        _ => return Err(MirsError::ParsingPackages { path: path.to_owned() })
+            Box::new(BufReader::with_capacity(1024 * 1024, bz2_decoder))
+        }
+        None => Box::new(BufReader::with_capacity(1024 * 1024, file_reader)),
+        _ => {
+            return Err(MirsError::ParsingPackages {
+                path: path.to_owned(),
+            });
+        }
     };
 
     Ok((reader, counter))

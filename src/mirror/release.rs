@@ -3,7 +3,21 @@ use std::{fs::File, sync::Arc};
 use async_trait::async_trait;
 use compact_str::format_compact;
 
-use crate::{context::Context, downloader::{Download, time_from_atomic}, error::{MirsError, Result}, metadata::{FilePath, checksum::Checksum, release::Release, repository::{INRELEASE_FILE_NAME, RELEASE_FILE_NAME}}, mirror::MirrorResult, pgp::verify_release_signature, progress::Progress, step::{Step, StepResult}};
+use crate::{
+    context::Context,
+    downloader::{Download, time_from_atomic},
+    error::{MirsError, Result},
+    metadata::{
+        FilePath,
+        checksum::Checksum,
+        release::Release,
+        repository::{INRELEASE_FILE_NAME, RELEASE_FILE_NAME},
+    },
+    mirror::MirrorResult,
+    pgp::verify_release_signature,
+    progress::Progress,
+    step::{Step, StepResult},
+};
 
 use super::MirrorState;
 
@@ -16,7 +30,7 @@ impl Step<MirrorState> for DownloadRelease {
     fn step_name(&self) -> &'static str {
         "Downloading release"
     }
-    
+
     fn error(&self, e: MirsError) -> Self::Result {
         MirrorResult::Error(MirsError::DownloadRelease { inner: Box::new(e) })
     }
@@ -39,7 +53,7 @@ impl Step<MirrorState> for DownloadRelease {
                 checksum: None,
                 size: None,
                 symlink_paths: Vec::new(),
-                always_download: true
+                always_download: true,
             });
 
             ctx.state.downloader.download(dl).await;
@@ -52,7 +66,7 @@ impl Step<MirrorState> for DownloadRelease {
         progress_bar.finish_using_style();
 
         let Some(release_file) = get_release_file(&files) else {
-            return Err(MirsError::NoReleaseFile)
+            return Err(MirsError::NoReleaseFile);
         };
 
         if ctx.state.opts.pgp_verify {
@@ -74,12 +88,12 @@ impl Step<MirrorState> for DownloadRelease {
             output.new_release = true;
         }
 
-        let mut release = Release::parse(release_file, &ctx.state.opts).await
+        let mut release = Release::parse(release_file, &ctx.state.opts)
+            .await
             .map_err(|e| MirsError::InvalidReleaseFile { inner: Box::new(e) })?;
 
-
         // we prune all the metadata files that this release references that we already have, by comparing the actual checksum.
-        // this way, we will attempt to redownload missing files as well as files that are there as a result of a previous 
+        // this way, we will attempt to redownload missing files as well as files that are there as a result of a previous
         // sync, where a later release had that file referenced, but wasn't available at the time of mirroring. if all the
         // files are okay, then there is nothing more to do!
 
@@ -90,32 +104,50 @@ impl Step<MirrorState> for DownloadRelease {
 
         let processing_progress_bar = file_progress.create_processing_progress_bar().await;
 
-        let dist_root = FilePath(format_compact!("{}/{}", ctx.state.repo.root_dir, ctx.state.opts.dist_part()));
-        release.prune_existing(dist_root.as_str(), file_progress.clone()).await?;
+        let dist_root = FilePath(format_compact!(
+            "{}/{}",
+            ctx.state.repo.root_dir,
+            ctx.state.opts.dist_part()
+        ));
+        release
+            .prune_existing(dist_root.as_str(), file_progress.clone())
+            .await?;
 
-        file_progress.wait_for_completion(&processing_progress_bar).await;
-        
+        file_progress
+            .wait_for_completion(&processing_progress_bar)
+            .await;
+
         if release.files.is_empty() {
             if output.new_release {
-                return Ok(StepResult::End(MirrorResult::IrrelevantChanges))
+                return Ok(StepResult::End(MirrorResult::IrrelevantChanges));
             } else {
-                return Ok(StepResult::End(MirrorResult::ReleaseUnchanged))
+                return Ok(StepResult::End(MirrorResult::ReleaseUnchanged));
             }
         }
 
         if let Some(release_components) = release.components() {
-            let components = release_components.split_ascii_whitespace()
-                .map(|v| v.split('/').next_back().expect("last should always exist here"))
+            let components = release_components
+                .split_ascii_whitespace()
+                .map(|v| {
+                    v.split('/')
+                        .next_back()
+                        .expect("last should always exist here")
+                })
                 .collect::<Vec<&str>>();
 
             for requested_component in &ctx.state.opts.components {
                 if !components.contains(&requested_component.as_str()) {
-                    println!("{} WARNING: {requested_component} is not in this repo", crate::now());
+                    println!(
+                        "{} WARNING: {requested_component} is not in this repo",
+                        crate::now()
+                    );
                 }
             }
         }
-        
-        if ctx.state.mtime && let Some(time_to_set) = release.release_time() {
+
+        if ctx.state.mtime
+            && let Some(time_to_set) = release.release_time()
+        {
             ctx.state.downloader.set_time(time_to_set);
 
             let system_time = time_from_atomic(ctx.state.downloader.time_to_set.clone());
@@ -124,7 +156,7 @@ impl Step<MirrorState> for DownloadRelease {
                 File::open(f)?.set_modified(system_time)?;
             }
         }
-        
+
         output.total_bytes_downloaded += ctx.progress.bytes.success();
         output.release = Some(release);
 
@@ -135,9 +167,9 @@ impl Step<MirrorState> for DownloadRelease {
 fn get_release_file(files: &[FilePath]) -> Option<&FilePath> {
     for file in files.iter().filter(|f| f.exists()) {
         if let INRELEASE_FILE_NAME | RELEASE_FILE_NAME = file.file_name() {
-            return Some(file)
+            return Some(file);
         }
     }
-    
+
     None
 }

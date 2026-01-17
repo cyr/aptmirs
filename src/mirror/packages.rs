@@ -1,10 +1,16 @@
-use std::sync::{atomic::Ordering, Arc};
+use std::sync::{Arc, atomic::Ordering};
 
 use async_trait::async_trait;
 use indicatif::MultiProgress;
 use tokio::{runtime::Handle, task::spawn_blocking};
 
-use crate::{context::Context, error::{MirsError, Result}, metadata::metadata_file::MetadataFile, progress::Progress, step::{Step, StepResult}};
+use crate::{
+    context::Context,
+    error::{MirsError, Result},
+    metadata::metadata_file::MetadataFile,
+    progress::Progress,
+    step::{Step, StepResult},
+};
 
 use super::{MirrorResult, MirrorState};
 
@@ -17,7 +23,7 @@ impl Step<MirrorState> for DownloadFromPackageIndices {
     fn step_name(&self) -> &'static str {
         "Downloading packages"
     }
-    
+
     fn error(&self, e: MirsError) -> Self::Result {
         MirrorResult::Error(MirsError::DownloadPackages { inner: Box::new(e) })
     }
@@ -33,9 +39,9 @@ impl Step<MirrorState> for DownloadFromPackageIndices {
         let file_progress_bar = multi_bar.add(file_progress.create_processing_progress_bar().await);
         let dl_progress_bar = multi_bar.add(dl_progress.create_download_progress_bar().await);
 
-        let packages_files = output.take_metadata(
-                |f| matches!(f, MetadataFile::Packages(..) | MetadataFile::Sources(..) )
-            ).into_iter()
+        let packages_files = output
+            .take_metadata(|f| matches!(f, MetadataFile::Packages(..) | MetadataFile::Sources(..)))
+            .into_iter()
             .map(MetadataFile::into_reader)
             .collect::<Result<Vec<_>>>()?;
 
@@ -53,32 +59,33 @@ impl Step<MirrorState> for DownloadFromPackageIndices {
 
         spawn_blocking(move || {
             let async_handle = Handle::current();
-            
+
             for packages_file in packages_files {
                 let counter = packages_file.counter();
                 file_progress.update_for_bytes(&file_progress_bar);
                 let package_size = packages_file.size();
-        
+
                 for package in packages_file {
                     let package = package?;
-        
+
                     let dl = task_repo.create_file_download(package);
-                    async_handle.block_on(async {
-                        task_downloader.queue(dl).await
-                    })?;
-                    
-                    file_progress.bytes.set_success(counter.load(Ordering::SeqCst) + incremental_size_base);
-        
+                    async_handle.block_on(async { task_downloader.queue(dl).await })?;
+
+                    file_progress
+                        .bytes
+                        .set_success(counter.load(Ordering::SeqCst) + incremental_size_base);
+
                     task_dl_progress.update_for_files(&task_dl_progress_bar);
                     file_progress.update_for_bytes(&file_progress_bar);
                 }
-        
+
                 incremental_size_base += package_size;
                 file_progress.update_for_bytes(&file_progress_bar);
             }
 
             Ok::<(), MirsError>(())
-        }).await??;
+        })
+        .await??;
 
         dl_progress.wait_for_completion(&dl_progress_bar).await;
 

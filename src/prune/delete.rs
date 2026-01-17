@@ -5,8 +5,13 @@ use async_trait::async_trait;
 use tokio::fs::remove_file;
 use walkdir::WalkDir;
 
-use crate::{context::Context, error::MirsError, metadata::FilePath, step::{Step, StepResult}};
 use crate::error::Result;
+use crate::{
+    context::Context,
+    error::MirsError,
+    metadata::FilePath,
+    step::{Step, StepResult},
+};
 
 use super::{PruneResult, PruneState};
 
@@ -19,30 +24,43 @@ impl Step<PruneState> for Delete {
     fn step_name(&self) -> &'static str {
         "Pruning"
     }
-    
+
     fn error(&self, e: MirsError) -> Self::Result {
         PruneResult::Error(MirsError::Delete { inner: Box::new(e) })
     }
 
     async fn execute(&self, ctx: Arc<Context<PruneState>>) -> Result<StepResult<Self::Result>> {
-        let (_, repo) = ctx.state.mirrors.first().expect("there should be a mirror on prune");
+        let (_, repo) = ctx
+            .state
+            .mirrors
+            .first()
+            .expect("there should be a mirror on prune");
 
         let progress_bar = ctx.progress.create_unbounded_progress_bar().await;
-        
+
         let mut output = ctx.state.output.lock().await;
 
         for entry in WalkDir::new(&repo.root_dir).into_iter().filter_entry(|v| {
             let path = v.path().as_os_str().to_str().expect("path should be utf8");
 
-            !ctx.state.exclude_paths.iter().any(|excl| path.starts_with(excl.as_str()))
+            !ctx.state
+                .exclude_paths
+                .iter()
+                .any(|excl| path.starts_with(excl.as_str()))
         }) {
             let entry = entry?;
 
             if entry.file_type().is_dir() {
-                continue
+                continue;
             }
 
-            let path = repo.strip_root(entry.path().as_os_str().to_str().expect("path should be utf8"));
+            let path = repo.strip_root(
+                entry
+                    .path()
+                    .as_os_str()
+                    .to_str()
+                    .expect("path should be utf8"),
+            );
 
             let size = entry.metadata()?.len();
 
@@ -76,28 +94,37 @@ impl Step<PruneState> for Delete {
     }
 }
 
-fn should_delete(valid_files: &HashMap<FilePath, Option<u64>>, entry: &walkdir::DirEntry, path: &str, size: u64) -> Result<bool> {
+fn should_delete(
+    valid_files: &HashMap<FilePath, Option<u64>>,
+    entry: &walkdir::DirEntry,
+    path: &str,
+    size: u64,
+) -> Result<bool> {
     if entry.path_is_symlink() {
         let mut real_path = std::fs::read_link(entry.path())?;
 
         if !real_path.starts_with("/") {
-            real_path = entry.path().parent()
+            real_path = entry
+                .path()
+                .parent()
                 .expect("all links should point from parent folders")
                 .join(&real_path);
         }
-        
+
         if !real_path.exists() {
-            return Ok(true)
+            return Ok(true);
         }
     }
 
     if size == 0 {
         if let Some(expected_size) = valid_files.get(path) {
-            if let Some(expected_size) = expected_size && *expected_size != 0 {
-                return Ok(true)
+            if let Some(expected_size) = expected_size
+                && *expected_size != 0
+            {
+                return Ok(true);
             }
         } else {
-            return Ok(true)
+            return Ok(true);
         }
     }
 

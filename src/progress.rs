@@ -1,8 +1,15 @@
-use std::{fmt::Display, sync::{atomic::{AtomicU64, AtomicU8, Ordering}, Arc}, time::Duration};
+use std::{
+    fmt::Display,
+    sync::{
+        Arc,
+        atomic::{AtomicU8, AtomicU64, Ordering},
+    },
+    time::Duration,
+};
 
 use compact_str::ToCompactString;
-use console::{style, pad_str};
-use indicatif::{ProgressBar, ProgressStyle, ProgressFinish, HumanBytes};
+use console::{pad_str, style};
+use indicatif::{HumanBytes, ProgressBar, ProgressFinish, ProgressStyle};
 use tokio::{sync::Mutex, time::sleep};
 
 #[derive(Clone, Default)]
@@ -12,7 +19,7 @@ pub struct Progress {
     pub files: ProgressPart,
     pub bytes: ProgressPart,
     pub total_bytes: Arc<AtomicU64>,
-    total_steps: Arc<AtomicU8>
+    total_steps: Arc<AtomicU8>,
 }
 
 impl Progress {
@@ -23,7 +30,7 @@ impl Progress {
             files: ProgressPart::new(),
             bytes: ProgressPart::new(),
             total_bytes: Arc::new(AtomicU64::new(0)),
-            total_steps: Arc::new(AtomicU8::new(4))
+            total_steps: Arc::new(AtomicU8::new(4)),
         }
     }
 
@@ -34,34 +41,37 @@ impl Progress {
             files: ProgressPart::new(),
             bytes: ProgressPart::new(),
             total_bytes: Arc::new(AtomicU64::new(0)),
-            total_steps: Arc::new(AtomicU8::new(4))
+            total_steps: Arc::new(AtomicU8::new(4)),
         }
     }
 
     pub async fn create_prefix_stepless(&self) -> String {
         pad_str(
-            &style(format!(
-                "{}", 
-                self.step_name.lock().await)
-            ).bold().to_string(), 
-            26, 
-            console::Alignment::Right, 
-            None
-        ).to_string()
+            &style(format!("{}", self.step_name.lock().await))
+                .bold()
+                .to_string(),
+            26,
+            console::Alignment::Right,
+            None,
+        )
+        .to_string()
     }
 
     pub async fn create_prefix(&self) -> String {
         pad_str(
             &style(format!(
-                "[{}/{}] {}", 
+                "[{}/{}] {}",
                 self.step.load(Ordering::SeqCst),
-                self.total_steps.load(Ordering::SeqCst), 
-                self.step_name.lock().await)
-            ).bold().to_string(), 
-            26, 
-            console::Alignment::Left, 
-            None
-        ).to_string()
+                self.total_steps.load(Ordering::SeqCst),
+                self.step_name.lock().await
+            ))
+            .bold()
+            .to_string(),
+            26,
+            console::Alignment::Left,
+            None,
+        )
+        .to_string()
     }
 
     pub async fn create_processing_progress_bar(&self) -> ProgressBar {
@@ -70,9 +80,7 @@ impl Progress {
         ProgressBar::new(self.bytes.total())
             .with_style(
                 ProgressStyle::default_bar()
-                    .template(
-                        "{prefix} [{wide_bar:.green/dim}] [{percent}%]",
-                    )
+                    .template("{prefix} [{wide_bar:.green/dim}] [{percent}%]")
                     .expect("template string should follow the syntax")
                     .progress_chars("###"),
             )
@@ -91,7 +99,6 @@ impl Progress {
                     )
                     .expect("template string should follow the syntax")
                     .progress_chars("###"),
-                    
             )
             .with_finish(ProgressFinish::AndLeave)
             .with_prefix(prefix)
@@ -103,12 +110,9 @@ impl Progress {
         ProgressBar::new(self.files.total())
             .with_style(
                 ProgressStyle::default_bar()
-                    .template(
-                        "{prefix} [{elapsed_precise}] {pos}/{len} [{msg}]",
-                    )
+                    .template("{prefix} [{elapsed_precise}] {pos}/{len} [{msg}]")
                     .expect("template string should follow the syntax")
                     .progress_chars("###"),
-                    
             )
             .with_finish(ProgressFinish::AndLeave)
             .with_prefix(prefix)
@@ -120,12 +124,9 @@ impl Progress {
         ProgressBar::new(self.files.total())
             .with_style(
                 ProgressStyle::default_bar()
-                    .template(
-                        "{prefix} [{wide_bar:.cyan/dim}] [{elapsed_precise}] [{msg}]",
-                    )
+                    .template("{prefix} [{wide_bar:.cyan/dim}] [{elapsed_precise}] [{msg}]")
                     .expect("template string should follow the syntax")
                     .progress_chars("###"),
-                    
             )
             .with_finish(ProgressFinish::AndLeave)
             .with_prefix(prefix)
@@ -168,14 +169,15 @@ impl Progress {
 
         self.step.fetch_add(1, Ordering::SeqCst);
     }
-    
-    pub async fn wait_for_completion(&self, progress_bar: &ProgressBar)  {
+
+    pub async fn wait_for_completion(&self, progress_bar: &ProgressBar) {
         while self.files.remaining() > 0 {
             self.update_for_files(progress_bar);
             sleep(Duration::from_millis(100)).await
         }
 
-        self.total_bytes.fetch_add(self.bytes.success(), Ordering::SeqCst);
+        self.total_bytes
+            .fetch_add(self.bytes.success(), Ordering::SeqCst);
 
         self.update_for_files(progress_bar);
 
@@ -188,17 +190,17 @@ pub struct ProgressPart {
     total: Arc<AtomicU64>,
     success: Arc<AtomicU64>,
     skipped: Arc<AtomicU64>,
-    failed: Arc<AtomicU64>
+    failed: Arc<AtomicU64>,
 }
 
 impl Display for ProgressPart {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(
-            format_args!(
-                "{} succeeded, {} skipped, {} failed",
-                self.success(), self.skipped(), self.failed()
-            )
-        )
+        f.write_fmt(format_args!(
+            "{} succeeded, {} skipped, {} failed",
+            self.success(),
+            self.skipped(),
+            self.failed()
+        ))
     }
 }
 
@@ -249,10 +251,10 @@ impl ProgressPart {
     }
 
     pub fn remaining(&self) -> u64 {
-        self.total.load(Ordering::SeqCst) -
-            self.success.load(Ordering::SeqCst) -
-            self.skipped.load(Ordering::SeqCst) -
-            self.failed.load(Ordering::SeqCst)
+        self.total.load(Ordering::SeqCst)
+            - self.success.load(Ordering::SeqCst)
+            - self.skipped.load(Ordering::SeqCst)
+            - self.failed.load(Ordering::SeqCst)
     }
 
     pub fn reset(&self) {

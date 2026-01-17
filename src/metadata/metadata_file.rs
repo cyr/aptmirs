@@ -1,11 +1,12 @@
-
 use ahash::{HashMap, HashMapExt};
-use compact_str::{format_compact, CompactString, ToCompactString};
+use compact_str::{CompactString, ToCompactString, format_compact};
 
-use crate::{error::MirsError, Result};
+use crate::{Result, error::MirsError};
 
-use super::{diff_index_file::DiffIndexFile, packages_file::PackagesFile, sources_file::SourcesFile, sum_file::SumFile, FilePath, IndexFileEntryIterator};
-
+use super::{
+    FilePath, IndexFileEntryIterator, diff_index_file::DiffIndexFile, packages_file::PackagesFile,
+    sources_file::SourcesFile, sum_file::SumFile,
+};
 
 #[derive(Debug)]
 pub enum MetadataFile {
@@ -13,27 +14,27 @@ pub enum MetadataFile {
     Sources(FilePath),
     DiffIndex(FilePath),
     SumFile(FilePath),
-    Other(FilePath)
+    Other(FilePath),
 }
 
 impl MetadataFile {
     pub fn path(&self) -> &FilePath {
         match self {
-            MetadataFile::Packages(file_path) |
-            MetadataFile::Sources(file_path) |
-            MetadataFile::DiffIndex(file_path) |
-            MetadataFile::SumFile(file_path) |
-            MetadataFile::Other(file_path) => file_path
+            MetadataFile::Packages(file_path)
+            | MetadataFile::Sources(file_path)
+            | MetadataFile::DiffIndex(file_path)
+            | MetadataFile::SumFile(file_path)
+            | MetadataFile::Other(file_path) => file_path,
         }
     }
 
     pub fn path_mut(&mut self) -> &mut FilePath {
         match self {
-            MetadataFile::Packages(file_path) |
-            MetadataFile::Sources(file_path) |
-            MetadataFile::DiffIndex(file_path) |
-            MetadataFile::SumFile(file_path) |
-            MetadataFile::Other(file_path) => file_path
+            MetadataFile::Packages(file_path)
+            | MetadataFile::Sources(file_path)
+            | MetadataFile::DiffIndex(file_path)
+            | MetadataFile::SumFile(file_path)
+            | MetadataFile::Other(file_path) => file_path,
         }
     }
 
@@ -55,18 +56,18 @@ impl MetadataFile {
 
     pub fn canonical_path(&self) -> FilePath {
         match self {
-            MetadataFile::Sources(file_path) |
-            MetadataFile::Packages(file_path) => {
+            MetadataFile::Sources(file_path) | MetadataFile::Packages(file_path) => {
                 let stem = file_path.file_stem();
                 let parent = file_path.parent().unwrap_or("");
                 FilePath(format_compact!("{parent}/{stem}"))
-            },
+            }
             MetadataFile::SumFile(file_path) => {
                 let path = file_path.parent().unwrap();
                 FilePath(path.to_compact_string())
-            },
-            MetadataFile::DiffIndex(file_path) |
-            MetadataFile::Other(file_path) => file_path.clone(),
+            }
+            MetadataFile::DiffIndex(file_path) | MetadataFile::Other(file_path) => {
+                file_path.clone()
+            }
         }
     }
 
@@ -80,7 +81,9 @@ impl MetadataFile {
             MetadataFile::Sources(..) => SourcesFile::build(self),
             MetadataFile::DiffIndex(..) => DiffIndexFile::build(self),
             MetadataFile::SumFile(..) => SumFile::build(self),
-            MetadataFile::Other(file_path) => Err(MirsError::NonIndexFileBuild { path: file_path.to_owned() } ),
+            MetadataFile::Other(file_path) => Err(MirsError::NonIndexFileBuild {
+                path: file_path.to_owned(),
+            }),
         }
     }
 }
@@ -102,19 +105,19 @@ impl From<CompactString> for MetadataFile {
         let value = FilePath(value);
 
         if is_packages_file(&value) {
-            return MetadataFile::Packages(value)
+            return MetadataFile::Packages(value);
         }
-        
+
         if is_sources_file(&value) {
-            return MetadataFile::Sources(value)
+            return MetadataFile::Sources(value);
         }
 
         if is_diff_index_file(&value) {
-            return MetadataFile::DiffIndex(value)
+            return MetadataFile::DiffIndex(value);
         }
-        
+
         if is_debian_installer_sumfile(&value) {
-            return MetadataFile::SumFile(value)
+            return MetadataFile::SumFile(value);
         }
 
         MetadataFile::Other(value)
@@ -144,16 +147,15 @@ pub fn deduplicate_metadata(files: Vec<MetadataFile>) -> Vec<MetadataFile> {
         let canonical = file.canonical_path();
 
         match &file {
-            MetadataFile::Packages(..) |
-            MetadataFile::Sources(..) => {
+            MetadataFile::Packages(..) | MetadataFile::Sources(..) => {
                 if let Some(old) = map.get_mut(&canonical) {
                     if is_extension_preferred(old.extension(), file.extension()) {
                         *old = file;
                     }
 
-                    continue
+                    continue;
                 }
-            },
+            }
             MetadataFile::SumFile(sum_file) => {
                 if let Some(old_file) = map.get_mut(&canonical) {
                     let MetadataFile::SumFile(old) = old_file else {
@@ -164,11 +166,10 @@ pub fn deduplicate_metadata(files: Vec<MetadataFile>) -> Vec<MetadataFile> {
                         *old_file = file;
                     }
 
-                    continue
+                    continue;
                 }
-            },
-            MetadataFile::DiffIndex(..) |
-            MetadataFile::Other(..) => (),
+            }
+            MetadataFile::DiffIndex(..) | MetadataFile::Other(..) => (),
         }
 
         map.insert(canonical, file);
@@ -178,16 +179,12 @@ pub fn deduplicate_metadata(files: Vec<MetadataFile>) -> Vec<MetadataFile> {
 }
 
 fn is_extension_preferred(old: Option<&str>, new: Option<&str>) -> bool {
-    matches!((old, new),
-        (_, Some("gz")) |
-        (_, Some("xz")) |
-        (_, Some("bz2")) 
+    matches!(
+        (old, new),
+        (_, Some("gz")) | (_, Some("xz")) | (_, Some("bz2"))
     )
 }
 
 fn is_sumfile_preferred(old: &str, new: &str) -> bool {
-    matches!((old, new), 
-        (_, "SHA512SUMS") |
-        (_, "SHA256SUMS")
-    )
+    matches!((old, new), (_, "SHA512SUMS") | (_, "SHA256SUMS"))
 }

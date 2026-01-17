@@ -1,21 +1,24 @@
 use std::sync::Arc;
 
 use crate::cmd::{CmdResult, CmdState};
-use crate::{progress::Progress, CliOpts};
+use crate::{CliOpts, progress::Progress};
 
 #[derive(Clone)]
 pub struct Context<T> {
     pub progress: Progress,
     pub cli_opts: Arc<CliOpts>,
-    pub state: T
+    pub state: T,
 }
 
-impl<T> Context<T> where T: CmdState<Result: CmdResult> {
+impl<T> Context<T>
+where
+    T: CmdState<Result: CmdResult>,
+{
     pub fn build(state: T, cli_opts: Arc<CliOpts>, progress: Progress) -> Arc<Self> {
         Arc::new(Context {
             progress,
             cli_opts,
-            state
+            state,
         })
     }
 

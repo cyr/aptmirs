@@ -1,14 +1,22 @@
-use std::{collections::BTreeMap, fs::File, io::BufRead, sync::{atomic::AtomicU64, Arc}};
+use std::{
+    collections::BTreeMap,
+    fs::File,
+    io::BufRead,
+    sync::{Arc, atomic::AtomicU64},
+};
 
-use compact_str::{format_compact, CompactString, ToCompactString};
+use compact_str::{CompactString, ToCompactString, format_compact};
 
-use crate::error::{Result, MirsError};
+use crate::error::{MirsError, Result};
 
-use super::{checksum::Checksum, create_reader, metadata_file::MetadataFile, IndexFileEntry, IndexFileEntryIterator};
+use super::{
+    IndexFileEntry, IndexFileEntryIterator, checksum::Checksum, create_reader,
+    metadata_file::MetadataFile,
+};
 
 pub struct SourceEntry {
     pub size: u64,
-    pub checksum: Checksum
+    pub checksum: Checksum,
 }
 
 pub struct SourcesFile {
@@ -17,7 +25,7 @@ pub struct SourcesFile {
     buf: String,
     files_buf: BTreeMap<CompactString, SourceEntry>,
     size: u64,
-    read: Arc<AtomicU64>
+    read: Arc<AtomicU64>,
 }
 
 impl SourcesFile {
@@ -30,7 +38,7 @@ impl SourcesFile {
         Ok(Box::new(Self {
             reader,
             file: meta_file,
-            buf: String::with_capacity(1024*8),
+            buf: String::with_capacity(1024 * 8),
             files_buf: BTreeMap::new(),
             size,
             read: counter,
@@ -46,7 +54,7 @@ impl IndexFileEntryIterator for SourcesFile {
     fn counter(&self) -> Arc<AtomicU64> {
         self.read.clone()
     }
-    
+
     fn file(&self) -> &MetadataFile {
         &self.file
     }
@@ -64,66 +72,77 @@ impl Iterator for SourcesFile {
                     Ok(0) => return None,
                     Ok(1) => break,
                     Ok(_) => (),
-                    Err(e) => return Some(Err(
-                        MirsError::ReadingPackage { 
-                            path: self.file.path().clone(), 
-                            inner: Box::new(e.into()) 
-                        }
-                    ))
+                    Err(e) => {
+                        return Some(Err(MirsError::ReadingPackage {
+                            path: self.file.path().clone(),
+                            inner: Box::new(e.into()),
+                        }));
+                    }
                 }
             }
-    
+
             let mut line_iter = self.buf.lines().peekable();
-    
+
             while let Some(line) = line_iter.next() {
                 if let Some(d) = line.strip_prefix("Directory: ") {
                     maybe_dir = Some(d)
-                } else if matches!(line, "Files:" | "Checksums-Sha1:" | "Checksums-Sha256:" | "Checksums-Sha512:") {
+                } else if matches!(
+                    line,
+                    "Files:" | "Checksums-Sha1:" | "Checksums-Sha256:" | "Checksums-Sha512:"
+                ) {
                     while let Some(line) = line_iter.next() {
                         let mut parts = line.split_whitespace();
 
                         let Some(checksum_part) = parts.next() else {
-                            return Some(Err(MirsError::ParsingSources { path: self.file.path().clone() }))
+                            return Some(Err(MirsError::ParsingSources {
+                                path: self.file.path().clone(),
+                            }));
                         };
-    
+
                         let checksum = match Checksum::try_from(checksum_part) {
                             Ok(v) => v,
-                            Err(e) => return Some(Err(e))
+                            Err(e) => return Some(Err(e)),
                         };
-                        
+
                         let Some(size_part) = parts.next() else {
-                            return Some(Err(MirsError::ParsingSources { path: self.file.path().clone() }))
+                            return Some(Err(MirsError::ParsingSources {
+                                path: self.file.path().clone(),
+                            }));
                         };
-    
+
                         let size: u64 = match size_part.parse() {
                             Ok(v) => v,
                             Err(e) => return Some(Err(e.into())),
                         };
-    
+
                         let Some(file_name) = parts.next() else {
-                            return Some(Err(MirsError::ParsingSources { path: self.file.path().clone() }))
+                            return Some(Err(MirsError::ParsingSources {
+                                path: self.file.path().clone(),
+                            }));
                         };
 
                         let file_name = CompactString::from(file_name);
-                        
+
                         if let Some(entry) = self.files_buf.get_mut(&file_name) {
                             entry.checksum.replace_if_stronger(checksum)
                         } else {
-                            self.files_buf.insert(file_name.to_compact_string(), SourceEntry {
-                                size,
-                                checksum
-                            });
+                            self.files_buf.insert(
+                                file_name.to_compact_string(),
+                                SourceEntry { size, checksum },
+                            );
                         }
 
                         if line_iter.peek().is_some_and(|v| !v.starts_with(' ')) {
-                            break
+                            break;
                         }
                     }
                 }
             }
 
             let Some(dir) = maybe_dir else {
-                return Some(Err(MirsError::ParsingSources { path: self.file.path().clone() }))
+                return Some(Err(MirsError::ParsingSources {
+                    path: self.file.path().clone(),
+                }));
             };
 
             let mut new_map = BTreeMap::new();
@@ -141,8 +160,8 @@ impl Iterator for SourcesFile {
             return Some(Ok(IndexFileEntry {
                 path,
                 size: Some(entry.size),
-                checksum: Some(entry.checksum)
-            }))
+                checksum: Some(entry.checksum),
+            }));
         }
 
         None

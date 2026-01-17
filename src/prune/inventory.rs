@@ -1,11 +1,23 @@
-use std::sync::{atomic::Ordering, Arc};
+use std::sync::{Arc, atomic::Ordering};
 
 use ahash::HashMap;
 use async_trait::async_trait;
 use compact_str::format_compact;
 
-use crate::{context::Context, error::MirsError, metadata::{metadata_file::{deduplicate_metadata, MetadataFile}, release::{FileEntry, Release}, repository::{Repository, INRELEASE_FILE_NAME, RELEASE_FILE_NAME, RELEASE_GPG_FILE_NAME}, FilePath}, mirror::verify_and_prune, progress::Progress, step::{Step, StepResult}};
 use crate::error::Result;
+use crate::{
+    context::Context,
+    error::MirsError,
+    metadata::{
+        FilePath,
+        metadata_file::{MetadataFile, deduplicate_metadata},
+        release::{FileEntry, Release},
+        repository::{INRELEASE_FILE_NAME, RELEASE_FILE_NAME, RELEASE_GPG_FILE_NAME, Repository},
+    },
+    mirror::verify_and_prune,
+    progress::Progress,
+    step::{Step, StepResult},
+};
 
 use super::{PruneResult, PruneState};
 
@@ -14,11 +26,11 @@ pub struct Inventory;
 #[async_trait]
 impl Step<PruneState> for Inventory {
     type Result = PruneResult;
-    
+
     fn step_name(&self) -> &'static str {
         "Taking inventory"
     }
-    
+
     fn error(&self, e: MirsError) -> Self::Result {
         PruneResult::Error(MirsError::Inventory { inner: Box::new(e) })
     }
@@ -37,7 +49,7 @@ impl Step<PruneState> for Inventory {
             let release_files = get_rooted_release_files(&dist_root);
 
             let Some(release_file) = pick_release(&release_files) else {
-                return Err(MirsError::NoReleaseFile)
+                return Err(MirsError::NoReleaseFile);
             };
 
             let release = Release::parse(release_file, opts).await?;
@@ -63,7 +75,8 @@ impl Step<PruneState> for Inventory {
                 }
             }
 
-            let mut metadata = metadata.into_iter()
+            let mut metadata = metadata
+                .into_iter()
                 .map(|(v, _)| v)
                 .filter(MetadataFile::is_index)
                 .collect();
@@ -72,27 +85,32 @@ impl Step<PruneState> for Inventory {
 
             let metadata = deduplicate_metadata(metadata);
 
-            let index_files = metadata.into_iter()
+            let index_files = metadata
+                .into_iter()
                 .map(MetadataFile::into_reader)
                 .collect::<Result<Vec<_>>>()?;
-            
+
             let total_size = index_files.iter().map(|v| v.size()).sum();
             progress.bytes.inc_total(total_size);
-            
+
             for meta_file in index_files {
                 let counter = meta_file.counter();
                 let meta_file_size = meta_file.size();
 
                 let base_path = match meta_file.file() {
-                    MetadataFile::Packages(..) |
-                    MetadataFile::Sources(..) => FilePath::from(""),
-                    MetadataFile::SumFile(file_path) |
-                    MetadataFile::DiffIndex(file_path) => {
-                        FilePath::from(repo.strip_root(file_path.parent().expect("diff indicies should have parents")))
-                    },
-                    MetadataFile::Other(..) => unreachable!()
+                    MetadataFile::Packages(..) | MetadataFile::Sources(..) => FilePath::from(""),
+                    MetadataFile::SumFile(file_path) | MetadataFile::DiffIndex(file_path) => {
+                        FilePath::from(
+                            repo.strip_root(
+                                file_path
+                                    .parent()
+                                    .expect("diff indicies should have parents"),
+                            ),
+                        )
+                    }
+                    MetadataFile::Other(..) => unreachable!(),
                 };
-                
+
                 for entry in meta_file {
                     let entry = entry?;
 
@@ -100,7 +118,9 @@ impl Step<PruneState> for Inventory {
 
                     add_valid_file(&progress, &mut state.files, path, entry.size);
 
-                    progress.bytes.set_success(counter.load(Ordering::SeqCst) + incremental_size_base);
+                    progress
+                        .bytes
+                        .set_success(counter.load(Ordering::SeqCst) + incremental_size_base);
 
                     progress.update_for_count(&progress_bar);
                 }
@@ -108,20 +128,31 @@ impl Step<PruneState> for Inventory {
                 incremental_size_base += meta_file_size;
             }
         }
-        
+
         progress_bar.finish_using_style();
 
         Ok(StepResult::Continue)
     }
 }
 
-fn add_valid_metadata_file(progress: &Progress, files: &mut HashMap<FilePath, Option<u64>>, file: &FilePath, size: Option<u64>, repo: &Repository) {
+fn add_valid_metadata_file(
+    progress: &Progress,
+    files: &mut HashMap<FilePath, Option<u64>>,
+    file: &FilePath,
+    size: Option<u64>,
+    repo: &Repository,
+) {
     let path = repo.strip_root(file.as_str());
 
     add_valid_file(progress, files, path.into(), size);
 }
 
-fn add_valid_file(progress: &Progress, files: &mut HashMap<FilePath, Option<u64>>, file: FilePath, size: Option<u64>) {
+fn add_valid_file(
+    progress: &Progress,
+    files: &mut HashMap<FilePath, Option<u64>>,
+    file: FilePath,
+    size: Option<u64>,
+) {
     if files.insert(file, size).is_none() {
         progress.files.inc_success(1);
     }
@@ -131,16 +162,17 @@ fn get_rooted_release_files(root: &FilePath) -> Vec<FilePath> {
     [
         root.join(INRELEASE_FILE_NAME),
         root.join(RELEASE_FILE_NAME),
-        root.join(RELEASE_GPG_FILE_NAME)
-    ].into_iter()
-        .filter(|v| v.exists())
-        .collect()
+        root.join(RELEASE_GPG_FILE_NAME),
+    ]
+    .into_iter()
+    .filter(|v| v.exists())
+    .collect()
 }
 
 fn pick_release(files: &[FilePath]) -> Option<&FilePath> {
     for f in files {
         if let INRELEASE_FILE_NAME | RELEASE_FILE_NAME = f.file_name() {
-            return Some(f)
+            return Some(f);
         }
     }
 

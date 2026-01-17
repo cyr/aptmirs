@@ -1,11 +1,14 @@
 use std::fmt::Display;
 
 use md5::Context;
-use sha1::{Sha1, Digest, digest::{FixedOutput, Update}};
+use sha1::{
+    Digest, Sha1,
+    digest::{FixedOutput, Update},
+};
 use sha2::{Sha256, Sha512};
 use tokio::io::AsyncReadExt;
 
-use crate::error::{Result, MirsError};
+use crate::error::{MirsError, Result};
 
 use super::FilePath;
 
@@ -14,7 +17,7 @@ pub enum Checksum {
     Md5([u8; 16]),
     Sha1([u8; 20]),
     Sha256([u8; 32]),
-    Sha512([u8; 64])
+    Sha512([u8; 64]),
 }
 
 impl TryFrom<&str> for Checksum {
@@ -26,23 +29,25 @@ impl TryFrom<&str> for Checksum {
                 let mut bytes = [0_u8; 16];
                 hex::decode_to_slice(value, &mut bytes)?;
                 Ok(bytes.into())
-            },
+            }
             40 => {
                 let mut bytes = [0_u8; 20];
                 hex::decode_to_slice(value, &mut bytes)?;
                 Ok(bytes.into())
-            },
+            }
             64 => {
                 let mut bytes = [0_u8; 32];
                 hex::decode_to_slice(value, &mut bytes)?;
                 Ok(bytes.into())
-            },
+            }
             128 => {
                 let mut bytes = [0_u8; 64];
                 hex::decode_to_slice(value, &mut bytes)?;
                 Ok(bytes.into())
             }
-            _ => Err(MirsError::IntoChecksum { value: value.to_string() })
+            _ => Err(MirsError::IntoChecksum {
+                value: value.to_string(),
+            }),
         }
     }
 }
@@ -74,8 +79,8 @@ impl From<[u8; 64]> for Checksum {
 impl Display for Checksum {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Checksum::Md5(v)    => f.write_str(&hex::encode(v)),
-            Checksum::Sha1(v)   => f.write_str(&hex::encode(v)),
+            Checksum::Md5(v) => f.write_str(&hex::encode(v)),
+            Checksum::Sha1(v) => f.write_str(&hex::encode(v)),
             Checksum::Sha256(v) => f.write_str(&hex::encode(v)),
             Checksum::Sha512(v) => f.write_str(&hex::encode(v)),
         }
@@ -85,8 +90,8 @@ impl Display for Checksum {
 impl Checksum {
     pub fn create_hasher(&self) -> Box<dyn Hasher> {
         match self {
-            Checksum::Md5(_)    => Box::new(Md5Hasher::new()),
-            Checksum::Sha1(_)   => Box::new(Sha1Hasher::new()),
+            Checksum::Md5(_) => Box::new(Md5Hasher::new()),
+            Checksum::Sha1(_) => Box::new(Sha1Hasher::new()),
             Checksum::Sha256(_) => Box::new(Sha256Hasher::new()),
             Checksum::Sha512(_) => Box::new(Sha512Hasher::new()),
         }
@@ -96,16 +101,19 @@ impl Checksum {
         Self::checksum_file_with_hasher(file, Box::new(Sha512Hasher::new())).await
     }
 
-    pub async fn checksum_file_with_hasher(file: &FilePath, mut hasher: Box<dyn Hasher>) -> Result<Checksum> {
+    pub async fn checksum_file_with_hasher(
+        file: &FilePath,
+        mut hasher: Box<dyn Hasher>,
+    ) -> Result<Checksum> {
         let mut f = tokio::fs::File::open(file).await?;
-        
+
         let mut buf = vec![0_u8; 8192];
 
         loop {
             match f.read(&mut buf).await {
                 Ok(0) => break,
                 Ok(n) => hasher.consume(&buf[..n]),
-                Err(e) => return Err(e.into())
+                Err(e) => return Err(e.into()),
             }
         }
 
@@ -123,7 +131,7 @@ impl Checksum {
 
     pub fn replace_if_stronger(&mut self, other: Checksum) {
         if self.bits() >= other.bits() {
-            return
+            return;
         }
 
         *self = other
@@ -132,11 +140,12 @@ impl Checksum {
 
 impl ChecksumType {
     pub fn is_stronger(first: &Option<Checksum>, second: ChecksumType) -> bool {
-        matches!((first, second), 
-            (_, ChecksumType::Sha512) |
-            (_, ChecksumType::Sha256) |
-            (_, ChecksumType::Sha1) |
-            (_, ChecksumType::Md5)
+        matches!(
+            (first, second),
+            (_, ChecksumType::Sha512)
+                | (_, ChecksumType::Sha256)
+                | (_, ChecksumType::Sha1)
+                | (_, ChecksumType::Md5)
         )
     }
 }
@@ -145,22 +154,22 @@ pub enum ChecksumType {
     Md5,
     Sha1,
     Sha256,
-    Sha512
+    Sha512,
 }
 
-pub trait Hasher : Sync + Send {
+pub trait Hasher: Sync + Send {
     fn consume(&mut self, data: &[u8]);
     fn compute(self: Box<Self>) -> Checksum;
 }
 
 struct Md5Hasher {
-    ctx: Context
+    ctx: Context,
 }
 
 impl Md5Hasher {
     pub fn new() -> Self {
         Self {
-            ctx: Context::new()
+            ctx: Context::new(),
         }
     }
 }
@@ -176,13 +185,13 @@ impl Hasher for Md5Hasher {
 }
 
 struct Sha1Hasher {
-    hasher: Sha1
+    hasher: Sha1,
 }
 
 impl Sha1Hasher {
     pub fn new() -> Self {
         Self {
-            hasher: Sha1::new()
+            hasher: Sha1::new(),
         }
     }
 }
@@ -198,13 +207,13 @@ impl Hasher for Sha1Hasher {
 }
 
 struct Sha256Hasher {
-    hasher: Sha256
+    hasher: Sha256,
 }
 
 impl Sha256Hasher {
     pub fn new() -> Self {
         Self {
-            hasher: sha2::Sha256::new()
+            hasher: sha2::Sha256::new(),
         }
     }
 }
@@ -220,13 +229,13 @@ impl Hasher for Sha256Hasher {
 }
 
 pub struct Sha512Hasher {
-    hasher: Sha512
+    hasher: Sha512,
 }
 
 impl Sha512Hasher {
     pub fn new() -> Self {
         Self {
-            hasher: sha2::Sha512::new()
+            hasher: sha2::Sha512::new(),
         }
     }
 }

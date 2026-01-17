@@ -1,10 +1,17 @@
 use std::{str::FromStr, sync::Arc};
 
-use compact_str::{format_compact, CompactString, ToCompactString};
+use compact_str::{CompactString, ToCompactString, format_compact};
 use pgp::composed::{CleartextSignedMessage, DetachedSignature, SignedPublicKey};
 use reqwest::Url;
 
-use crate::{config::MirrorOpts, downloader::Download, error::{MirsError, Result}, metadata::{checksum::Checksum, release::FileEntry, FilePath, IndexFileEntry}, pgp::{read_public_key, KeyStore}, CliOpts};
+use crate::{
+    CliOpts,
+    config::MirrorOpts,
+    downloader::Download,
+    error::{MirsError, Result},
+    metadata::{FilePath, IndexFileEntry, checksum::Checksum, release::FileEntry},
+    pgp::{KeyStore, read_public_key},
+};
 
 pub const INRELEASE_FILE_NAME: &str = "InRelease";
 pub const RELEASE_FILE_NAME: &str = "Release";
@@ -28,8 +35,9 @@ impl Repository {
 
         let dist_url = format_compact!("{root_url}/{}", mirror_opts.dist_part());
 
-        let parsed_url = Url::parse(&root_url)
-            .map_err(|_| MirsError::UrlParsing { url: root_url.clone() })?;
+        let parsed_url = Url::parse(&root_url).map_err(|_| MirsError::UrlParsing {
+            url: root_url.clone(),
+        })?;
 
         let pgp_pub_key = if let Some(pgp_signing_key) = &mirror_opts.pgp_pub_key {
             let file = FilePath::from_str(pgp_signing_key.as_ref())?;
@@ -45,7 +53,7 @@ impl Repository {
             root_dir,
             dist_url,
             tmp_dir: FilePath::from(""),
-            pgp_pub_key
+            pgp_pub_key,
         })
     }
 
@@ -57,8 +65,9 @@ impl Repository {
 
         let dist_url = format_compact!("{root_url}/{}", mirror_opts.dist_part());
 
-        let parsed_url = Url::parse(&root_url)
-            .map_err(|_| MirsError::UrlParsing { url: root_url.clone() })?;
+        let parsed_url = Url::parse(&root_url).map_err(|_| MirsError::UrlParsing {
+            url: root_url.clone(),
+        })?;
 
         let pgp_pub_key = if let Some(pgp_signing_key) = &mirror_opts.pgp_pub_key {
             let file = FilePath::from_str(pgp_signing_key.as_ref())?;
@@ -75,7 +84,7 @@ impl Repository {
             root_dir,
             dist_url,
             tmp_dir,
-            pgp_pub_key
+            pgp_pub_key,
         }))
     }
 
@@ -83,7 +92,7 @@ impl Repository {
         [
             format_compact!("{}/{INRELEASE_FILE_NAME}", self.dist_url),
             format_compact!("{}/{RELEASE_FILE_NAME}", self.dist_url),
-            format_compact!("{}/{RELEASE_GPG_FILE_NAME}", self.dist_url)
+            format_compact!("{}/{RELEASE_GPG_FILE_NAME}", self.dist_url),
         ]
     }
 
@@ -106,21 +115,20 @@ impl Repository {
 
     pub fn delete_tmp(&self) -> Result<()> {
         if !self.tmp_dir.exists() {
-            return Ok(())
+            return Ok(());
         }
-        
-        std::fs::remove_dir_all(&self.tmp_dir)
-            .map_err(MirsError::from)
+
+        std::fs::remove_dir_all(&self.tmp_dir).map_err(MirsError::from)
     }
 
     pub fn strip_root<'a>(&self, path: &'a str) -> &'a str {
         let Some(path) = path.strip_prefix(self.root_dir.as_str()) else {
-            return path
+            return path;
         };
 
         match path.strip_prefix('/') {
             Some(p) => p,
-            None => path
+            None => path,
         }
     }
 
@@ -148,16 +156,21 @@ impl Repository {
     pub fn rebase_rel_to_root<P: AsRef<str>>(&self, path: P) -> FilePath {
         FilePath(format_compact!("{}/{}", self.root_dir, path.as_ref()))
     }
-    
+
     pub fn tmp_to_root<P: AsRef<str>>(&self, path: P) -> FilePath {
-        path.as_ref().strip_prefix(self.tmp_dir.as_str())
+        path.as_ref()
+            .strip_prefix(self.tmp_dir.as_str())
             .map(|v| self.root_dir.join(v))
             .expect("path should be in tmp")
     }
-    
+
     pub fn strip_tmp_base<P: AsRef<str>>(&self, path: P) -> FilePath {
-        path.as_ref().strip_prefix(self.tmp_dir.as_str())
-            .map(|v| v.strip_prefix('/').expect("Paths that strip tmp base should always start with / here"))
+        path.as_ref()
+            .strip_prefix(self.tmp_dir.as_str())
+            .map(|v| {
+                v.strip_prefix('/')
+                    .expect("Paths that strip tmp base should always start with / here")
+            })
             .map(FilePath::from)
             .expect("path should be in tmp")
     }
@@ -176,21 +189,33 @@ impl Repository {
         })
     }
 
-    pub fn create_raw_download(&self, target_path: FilePath, url: CompactString, checksum: Option<Checksum>) -> Box<Download> {
+    pub fn create_raw_download(
+        &self,
+        target_path: FilePath,
+        url: CompactString,
+        checksum: Option<Checksum>,
+    ) -> Box<Download> {
         Box::new(Download {
             url,
             size: None,
             checksum,
             primary_target_path: target_path,
             symlink_paths: Vec::new(),
-            always_download: true
+            always_download: true,
         })
     }
 
-    pub fn create_metadata_download(&self, url: CompactString, file_path: FilePath, file_entry: FileEntry, by_hash: bool) -> Result<Box<Download>> {
+    pub fn create_metadata_download(
+        &self,
+        url: CompactString,
+        file_path: FilePath,
+        file_entry: FileEntry,
+        by_hash: bool,
+    ) -> Result<Box<Download>> {
         let size = file_entry.size;
 
-        let (checksum, primary_target_path, symlink_paths) = file_entry.into_paths(&file_path, by_hash)?;
+        let (checksum, primary_target_path, symlink_paths) =
+            file_entry.into_paths(&file_path, by_hash)?;
 
         Ok(Box::new(Download {
             url,
@@ -198,27 +223,31 @@ impl Repository {
             checksum,
             primary_target_path,
             symlink_paths,
-            always_download: false
+            always_download: false,
         }))
     }
 }
 
 impl KeyStore for Repository {
-    fn verify_inlined_signed_release(&self, msg: &CleartextSignedMessage, content: &str) -> Result<()> {
+    fn verify_inlined_signed_release(
+        &self,
+        msg: &CleartextSignedMessage,
+        content: &str,
+    ) -> Result<()> {
         let Some(key) = &self.pgp_pub_key else {
-            return Err(MirsError::PgpNotVerified)
+            return Err(MirsError::PgpNotVerified);
         };
 
         for signature in msg.signatures() {
             if signature.verify(key, content.as_bytes()).is_ok() {
-                return Ok(())
+                return Ok(());
             }
         }
 
         for sub_key in &key.public_subkeys {
             for signature in msg.signatures() {
                 if signature.verify(sub_key, content.as_bytes()).is_ok() {
-                    return Ok(())
+                    return Ok(());
                 }
             }
         }
@@ -226,18 +255,22 @@ impl KeyStore for Repository {
         Err(MirsError::PgpNotVerified)
     }
 
-    fn verify_release_with_standalone_signature(&self, signature: &DetachedSignature, content: &str) -> Result<()> {
+    fn verify_release_with_standalone_signature(
+        &self,
+        signature: &DetachedSignature,
+        content: &str,
+    ) -> Result<()> {
         let Some(key) = &self.pgp_pub_key else {
-            return Err(MirsError::PgpNotVerified)
+            return Err(MirsError::PgpNotVerified);
         };
 
         if signature.verify(key, content.as_bytes()).is_ok() {
-            return Ok(())
+            return Ok(());
         }
 
         for sub_key in &key.public_subkeys {
             if signature.verify(sub_key, content.as_bytes()).is_ok() {
-                return Ok(())
+                return Ok(());
             }
         }
 
@@ -263,7 +296,9 @@ fn sanitize_name(part: &str) -> CompactString {
 
 fn create_tmp_dir(url: &Url, suite: &str, base_dir: &FilePath) -> Result<FilePath> {
     let Some(host) = url.host() else {
-        return Err(MirsError::UrlParsing { url: url.to_compact_string() })
+        return Err(MirsError::UrlParsing {
+            url: url.to_compact_string(),
+        });
     };
 
     let path = url.path();
@@ -273,34 +308,36 @@ fn create_tmp_dir(url: &Url, suite: &str, base_dir: &FilePath) -> Result<FilePat
     } else {
         sanitize_name(path)
     };
-    
+
     let suite_part = sanitize_name(suite);
 
-    let tmp_dir = base_dir
-        .join(format_compact!(".tmp/{host}{path_part}_{suite_part}"));
+    let tmp_dir = base_dir.join(format_compact!(".tmp/{host}{path_part}_{suite_part}"));
 
     match std::fs::metadata(&tmp_dir) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             std::fs::create_dir_all(&tmp_dir)?;
             Ok(tmp_dir)
-        },
-        Err(e) => Err(MirsError::Tmp { msg: e.to_compact_string() }),
-        Ok(_) => Err(MirsError::Tmp { 
+        }
+        Err(e) => Err(MirsError::Tmp {
+            msg: e.to_compact_string(),
+        }),
+        Ok(_) => Err(MirsError::Tmp {
             msg: format_compact!(
                 "tmp folder already exists for this repository. aptmirs is probably currently running. if it is not, delete {}",
                 tmp_dir.as_str()
-            )
-        })
+            ),
+        }),
     }
 }
 
 fn local_dir_from_archive_url(url: &Url, dir: &FilePath) -> Result<FilePath> {
     let Some(host) = url.host() else {
-        return Err(MirsError::UrlParsing { url: url.to_compact_string() })
+        return Err(MirsError::UrlParsing {
+            url: url.to_compact_string(),
+        });
     };
 
-    let mut base_dir = dir
-        .join(host.to_compact_string());
+    let mut base_dir = dir.join(host.to_compact_string());
 
     if let Some(path) = url.path().strip_prefix('/') {
         base_dir = base_dir.join(path);

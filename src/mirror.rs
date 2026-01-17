@@ -10,14 +10,24 @@ use release::DownloadRelease;
 use thiserror::Error;
 use tokio::{sync::Mutex, task::spawn_blocking};
 
-use crate::{cmd::{CmdResult, CmdState}, config::MirrorOpts, context::Context, downloader::Downloader, error::MirsError, metadata::{metadata_file::MetadataFile, release::Release, repository::Repository, FilePath}, pgp::PgpKeyStore, step::Step, CliOpts};
 use crate::error::Result;
+use crate::{
+    CliOpts,
+    cmd::{CmdResult, CmdState},
+    config::MirrorOpts,
+    context::Context,
+    downloader::Downloader,
+    error::MirsError,
+    metadata::{FilePath, metadata_file::MetadataFile, release::Release, repository::Repository},
+    pgp::PgpKeyStore,
+    step::Step,
+};
 
-pub mod release;
-pub mod metadata;
-pub mod diffs;
-pub mod packages;
 pub mod debian_installer;
+pub mod diffs;
+pub mod metadata;
+pub mod packages;
+pub mod release;
 
 pub type MirrorDynStep = Box<dyn Step<MirrorState, Result = MirrorResult>>;
 pub type MirrorContext = Arc<Context<MirrorState>>;
@@ -25,7 +35,10 @@ pub type MirrorContext = Arc<Context<MirrorState>>;
 #[derive(Error, Debug)]
 pub enum MirrorResult {
     #[error("Ok: {} downloaded, {} packages/source files", HumanBytes(*.total_download_size), .num_packages_downloaded)]
-    NewRelease { total_download_size: u64, num_packages_downloaded: u64 },
+    NewRelease {
+        total_download_size: u64,
+        num_packages_downloaded: u64,
+    },
     #[error("Ok: release unchanged")]
     ReleaseUnchanged,
     #[error("Ok: new release, but changes do not apply to configured selections")]
@@ -33,10 +46,10 @@ pub enum MirrorResult {
     #[error("Ok: release unchanged, but attempted to download missing files")]
     ReleaseUnchangedButIncomplete,
     #[error("Fail: {0}")]
-    Error(MirsError)
+    Error(MirsError),
 }
 
-impl CmdResult for MirrorResult { }
+impl CmdResult for MirrorResult {}
 
 #[derive(Default)]
 pub struct MirrorState {
@@ -45,7 +58,7 @@ pub struct MirrorState {
     pub downloader: Downloader,
     pub pgp_key_store: Arc<PgpKeyStore>,
     pub mtime: bool,
-    pub output: Arc<Mutex<MirrorOutput>>
+    pub output: Arc<Mutex<MirrorOutput>>,
 }
 
 #[derive(Default)]
@@ -56,14 +69,17 @@ pub struct MirrorOutput {
     pub total_bytes_downloaded: u64,
     pub total_packages_downloaded: u64,
     pub new_release: bool,
-} 
+}
 
 impl MirrorOutput {
     pub fn is_empty(&self) -> bool {
         self.indices.is_empty()
     }
 
-    pub fn take_metadata<F: Fn(&MetadataFile) -> bool>(&mut self, filter_func: F) -> Vec<MetadataFile> {
+    pub fn take_metadata<F: Fn(&MetadataFile) -> bool>(
+        &mut self,
+        filter_func: F,
+    ) -> Vec<MetadataFile> {
         let mut vec = Vec::new();
 
         for i in (0..self.indices.len()).rev() {
@@ -93,15 +109,16 @@ impl MirrorState {
 
         spawn_blocking(move || {
             rebase_dir(tmp_dir.as_ref(), tmp_dir.as_ref(), root_dir.as_ref())?;
-            
-            std::fs::remove_dir_all(&tmp_dir)?;
-            
-            Ok::<(), MirsError>(())
-        }).await??;
 
-        Ok(MirrorResult::NewRelease { 
+            std::fs::remove_dir_all(&tmp_dir)?;
+
+            Ok::<(), MirsError>(())
+        })
+        .await??;
+
+        Ok(MirrorResult::NewRelease {
             total_download_size: output.total_bytes_downloaded,
-            num_packages_downloaded: output.total_packages_downloaded
+            num_packages_downloaded: output.total_packages_downloaded,
         })
     }
 }
@@ -119,10 +136,10 @@ impl CmdState for MirrorState {
     async fn finalize(&self) -> Self::Result {
         let result = {
             let output = self.output.lock().await;
-            
+
             MirrorResult::NewRelease {
                 total_download_size: output.total_bytes_downloaded,
-                num_packages_downloaded: output.total_packages_downloaded
+                num_packages_downloaded: output.total_packages_downloaded,
             }
         };
 
@@ -131,19 +148,18 @@ impl CmdState for MirrorState {
 
     async fn finalize_with_result(&self, result: Self::Result) -> Self::Result {
         match &result {
-            MirrorResult::NewRelease { .. } |
-            MirrorResult::IrrelevantChanges => {
+            MirrorResult::NewRelease { .. } | MirrorResult::IrrelevantChanges => {
                 if let Err(e) = self.move_metadata_into_root().await {
-                    return MirrorResult::Error(MirsError::Finalize { inner: Box::new(e) })
+                    return MirrorResult::Error(MirsError::Finalize { inner: Box::new(e) });
                 }
-            },
-            MirrorResult::ReleaseUnchangedButIncomplete |
-            MirrorResult::ReleaseUnchanged |
-            MirrorResult::Error(..) => {
+            }
+            MirrorResult::ReleaseUnchangedButIncomplete
+            | MirrorResult::ReleaseUnchanged
+            | MirrorResult::Error(..) => {
                 _ = self.repo.delete_tmp();
-            },
+            }
         }
-            
+
         result
     }
 }
@@ -164,7 +180,12 @@ impl Context<MirrorState> {
         steps
     }
 
-    pub fn create(opts: Vec<MirrorOpts>, cli_opts: Arc<CliOpts>, pgp_key_store: Arc<PgpKeyStore>, mtime: bool) -> Result<Vec<(MirrorContext, Vec<MirrorDynStep>)>> {
+    pub fn create(
+        opts: Vec<MirrorOpts>,
+        cli_opts: Arc<CliOpts>,
+        pgp_key_store: Arc<PgpKeyStore>,
+        mtime: bool,
+    ) -> Result<Vec<(MirrorContext, Vec<MirrorDynStep>)>> {
         let downloader = Downloader::build(cli_opts.dl_threads, mtime);
 
         opts.into_iter()
@@ -194,7 +215,7 @@ pub fn verify_and_prune(files: &mut Vec<MetadataFile>) {
     let mut pos = 0;
     loop {
         if pos >= files.len() {
-            break
+            break;
         }
 
         if !files[pos].exists() {
@@ -212,7 +233,8 @@ fn rebase_dir(dir: &Path, from: &Path, to: &Path) -> Result<()> {
         if path.is_dir() {
             rebase_dir(&path, from, to)?;
         } else {
-            let rel_path = path.strip_prefix(from)
+            let rel_path = path
+                .strip_prefix(from)
                 .expect("implemention error; path should be in tmp");
 
             let new_path = to.join(rel_path);
@@ -221,7 +243,7 @@ fn rebase_dir(dir: &Path, from: &Path, to: &Path) -> Result<()> {
             if !parent.exists() {
                 std::fs::create_dir_all(parent)?;
             }
-            
+
             if std::fs::rename(&path, &new_path).is_err() {
                 std::fs::copy(&path, &new_path)?;
             }

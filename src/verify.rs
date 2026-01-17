@@ -5,8 +5,17 @@ use thiserror::Error;
 use tokio::sync::Mutex;
 use verification::Verify;
 
-use crate::{cmd::{CmdResult, CmdState}, config::MirrorOpts, context::Context, error::MirsError, metadata::repository::Repository, step::Step, verifier::Verifier, CliOpts};
 use crate::error::Result;
+use crate::{
+    CliOpts,
+    cmd::{CmdResult, CmdState},
+    config::MirrorOpts,
+    context::Context,
+    error::MirsError,
+    metadata::repository::Repository,
+    step::Step,
+    verifier::Verifier,
+};
 
 pub type VerifyDynStep = Box<dyn Step<VerifyState, Result = VerifyResult>>;
 pub type VerifyContext = Arc<Context<VerifyState>>;
@@ -16,12 +25,16 @@ pub mod verification;
 #[derive(Error, Debug)]
 pub enum VerifyResult {
     #[error("Ok: {valid_files} valid, {corrupt_files} corrupt, {missing_files} missing")]
-    Done { valid_files: u64, corrupt_files: u64, missing_files: u64 },
+    Done {
+        valid_files: u64,
+        corrupt_files: u64,
+        missing_files: u64,
+    },
     #[error("Fail: {0}")]
-    Error(MirsError)
+    Error(MirsError),
 }
 
-impl CmdResult for VerifyResult { }
+impl CmdResult for VerifyResult {}
 
 #[derive(Default)]
 pub struct VerifyState {
@@ -64,12 +77,13 @@ impl CmdState for VerifyState {
 
 impl Context<VerifyState> {
     fn create_steps() -> Vec<VerifyDynStep> {
-        vec![
-            Box::new(Verify)
-        ]
+        vec![Box::new(Verify)]
     }
 
-    pub fn create(opts: Vec<MirrorOpts>, cli_opts: Arc<CliOpts>) -> Result<Vec<(VerifyContext, Vec<VerifyDynStep>)>> {
+    pub fn create(
+        opts: Vec<MirrorOpts>,
+        cli_opts: Arc<CliOpts>,
+    ) -> Result<Vec<(VerifyContext, Vec<VerifyDynStep>)>> {
         let verifier = Verifier::build(cli_opts.dl_threads);
 
         opts.into_iter()
@@ -85,7 +99,10 @@ impl Context<VerifyState> {
                     ..Default::default()
                 };
 
-                Ok((Context::build(state, cli_opts.clone(), verifier.progress()), steps))
+                Ok((
+                    Context::build(state, cli_opts.clone(), verifier.progress()),
+                    steps,
+                ))
             })
             .collect::<Result<Vec<(_, _)>>>()
     }

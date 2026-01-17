@@ -3,8 +3,13 @@ use std::{str::FromStr, sync::Arc};
 use async_trait::async_trait;
 use tokio::{runtime::Handle, task::spawn_blocking};
 
-use crate::{context::Context, error::MirsError, metadata::{metadata_file::MetadataFile, FilePath}, step::{Step, StepResult}};
 use crate::error::Result;
+use crate::{
+    context::Context,
+    error::MirsError,
+    metadata::{FilePath, metadata_file::MetadataFile},
+    step::{Step, StepResult},
+};
 
 use super::{MirrorResult, MirrorState};
 
@@ -17,19 +22,19 @@ impl Step<MirrorState> for DownloadFromDiffs {
     fn step_name(&self) -> &'static str {
         "Downloading diffs"
     }
-    
+
     fn error(&self, e: MirsError) -> Self::Result {
         MirrorResult::Error(MirsError::DownloadDiffs { inner: Box::new(e) })
     }
-    
+
     async fn execute(&self, ctx: Arc<Context<MirrorState>>) -> Result<StepResult<Self::Result>> {
         let mut output = ctx.state.output.lock().await;
-        
+
         let progress_bar = ctx.progress.create_download_progress_bar().await;
 
-        let diff_indices = output.take_metadata(
-                |f| matches!(f, MetadataFile::DiffIndex(..) )
-            ).into_iter()
+        let diff_indices = output
+            .take_metadata(|f| matches!(f, MetadataFile::DiffIndex(..)))
+            .into_iter()
             .map(MetadataFile::into_reader)
             .collect::<Result<Vec<_>>>()?;
 
@@ -40,7 +45,13 @@ impl Step<MirrorState> for DownloadFromDiffs {
 
             for diff_index in diff_indices {
                 let rel_base_path = FilePath::from_str(
-                    task_repo.rel_from_tmp(diff_index.file().path().parent().expect("diff indicies should have parents"))
+                    task_repo.rel_from_tmp(
+                        diff_index
+                            .file()
+                            .path()
+                            .parent()
+                            .expect("diff indicies should have parents"),
+                    ),
                 )?;
 
                 for diff_file in diff_index {
@@ -51,19 +62,18 @@ impl Step<MirrorState> for DownloadFromDiffs {
                     diff_file.path = rel_file_path;
 
                     let dl = task_repo.create_file_download(diff_file);
-                    async_handle.block_on(async {
-                        task_downloader.queue(dl).await
-                    })?;
+                    async_handle.block_on(async { task_downloader.queue(dl).await })?;
                 }
             }
-            
+
             Ok::<(), MirsError>(())
-        }).await??;
+        })
+        .await??;
 
         ctx.progress.wait_for_completion(&progress_bar).await;
 
         output.total_bytes_downloaded += ctx.progress.bytes.success();
-        
+
         Ok(StepResult::Continue)
     }
 }

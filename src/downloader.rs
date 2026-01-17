@@ -1,20 +1,32 @@
+use std::{
+    fs::FileTimes,
+    path::Path,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
-use std::{fs::FileTimes, path::Path, sync::{atomic::{AtomicU64, Ordering}, Arc}, time::{Duration, SystemTime, UNIX_EPOCH}};
-
-use async_channel::{bounded, Sender, Receiver};
+use async_channel::{Receiver, Sender, bounded};
 use compact_str::{CompactString, ToCompactString};
 use reqwest::{Client, StatusCode};
-use tokio::{task::JoinHandle, io::AsyncWriteExt, fs::symlink};
+use tokio::{fs::symlink, io::AsyncWriteExt, task::JoinHandle};
 
-use crate::{error::{MirsError, Result}, metadata::{checksum::Checksum, FilePath}};
+use crate::{
+    error::{MirsError, Result},
+    metadata::{FilePath, checksum::Checksum},
+};
 
 use super::progress::Progress;
 
 fn now() -> Arc<AtomicU64> {
-    Arc::new(SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("now should always be after unix epoch")
-        .as_secs().into()
+    Arc::new(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("now should always be after unix epoch")
+            .as_secs()
+            .into(),
     )
 }
 
@@ -37,7 +49,7 @@ impl Default for Downloader {
             progress: Default::default(),
             http_client: Default::default(),
             time_to_set: now(),
-            mtime: false
+            mtime: false,
         }
     }
 }
@@ -56,11 +68,21 @@ impl Downloader {
             let task_receiver: Receiver<Box<Download>> = receiver.clone();
             let task_progress = progress.clone();
             let task_http_client = http_client.clone();
-            let task_time = if mtime { Some(time_to_set.clone()) } else { None };
+            let task_time = if mtime {
+                Some(time_to_set.clone())
+            } else {
+                None
+            };
 
             let handle = tokio::spawn(async move {
                 while let Ok(dl) = task_receiver.recv().await {
-                    _ = Downloader::download_and_track(&task_http_client, task_time.clone(), task_progress.clone(), dl).await;
+                    _ = Downloader::download_and_track(
+                        &task_http_client,
+                        task_time.clone(),
+                        task_progress.clone(),
+                        dl,
+                    )
+                    .await;
                 }
             });
 
@@ -73,7 +95,7 @@ impl Downloader {
             progress,
             http_client,
             time_to_set,
-            mtime
+            mtime,
         }
     }
 
@@ -89,33 +111,43 @@ impl Downloader {
         Ok(())
     }
 
-    async fn download_and_track(http_client: &Client, time: Option<Arc<AtomicU64>>, progress: Progress, dl: Box<Download>) {
+    async fn download_and_track(
+        http_client: &Client,
+        time: Option<Arc<AtomicU64>>,
+        progress: Progress,
+        dl: Box<Download>,
+    ) {
         let file_size = dl.size;
-        
-        match download_file(http_client, time, dl,
-            |downloaded| progress.bytes.inc_success(downloaded)
-        ).await {
+
+        match download_file(http_client, time, dl, |downloaded| {
+            progress.bytes.inc_success(downloaded)
+        })
+        .await
+        {
             Ok(true) => progress.files.inc_success(1),
             Ok(false) => progress.files.inc_skipped(1),
-            Err(e) => {
-                match e {
-                    MirsError::Checksum { .. } => progress.files.inc_failed(1),
-                    MirsError::Download { .. } => {
-                        if let Some(size) = file_size {
-                            progress.bytes.inc_skipped(size);
-                        }
+            Err(e) => match e {
+                MirsError::Checksum { .. } => progress.files.inc_failed(1),
+                MirsError::Download { .. } => {
+                    if let Some(size) = file_size {
+                        progress.bytes.inc_skipped(size);
+                    }
 
-                        progress.files.inc_skipped(1);
-                    },
-                    _ => progress.files.inc_skipped(1),
+                    progress.files.inc_skipped(1);
                 }
-            }
+                _ => progress.files.inc_skipped(1),
+            },
         }
     }
 
     pub async fn download(&self, download: Box<Download>) {
-        let time = if self.mtime { Some(self.time_to_set.clone()) } else { None } ;
-        Downloader::download_and_track(&self.http_client, time, self.progress.clone(), download).await
+        let time = if self.mtime {
+            Some(self.time_to_set.clone())
+        } else {
+            None
+        };
+        Downloader::download_and_track(&self.http_client, time, self.progress.clone(), download)
+            .await
     }
 
     pub fn progress(&self) -> Progress {
@@ -127,9 +159,15 @@ impl Downloader {
     }
 }
 
-async fn download_file<F>(http_client: &Client, time: Option<Arc<AtomicU64>>, download: Box<Download>, mut progress_cb: F) -> Result<bool>
-    where F: FnMut(u64) {
-    
+async fn download_file<F>(
+    http_client: &Client,
+    time: Option<Arc<AtomicU64>>,
+    download: Box<Download>,
+    mut progress_cb: F,
+) -> Result<bool>
+where
+    F: FnMut(u64),
+{
     let mut downloaded = false;
 
     if needs_downloading(&download) {
@@ -143,7 +181,10 @@ async fn download_file<F>(http_client: &Client, time: Option<Arc<AtomicU64>>, do
             if response.status() != StatusCode::OK {
                 drop(output);
                 tokio::fs::remove_file(&download.primary_target_path).await?;
-                return Err(MirsError::Download { url: download.url.clone(), status_code: response.status() })
+                return Err(MirsError::Download {
+                    url: download.url.clone(),
+                    status_code: response.status(),
+                });
             }
 
             if let Some(expected_checksum) = download.checksum {
@@ -152,7 +193,7 @@ async fn download_file<F>(http_client: &Client, time: Option<Arc<AtomicU64>>, do
                 while let Some(chunk) = response.chunk().await? {
                     output.write_all(&chunk).await?;
                     hasher.consume(&chunk);
-            
+
                     progress_cb(chunk.len() as u64);
                 }
 
@@ -161,58 +202,63 @@ async fn download_file<F>(http_client: &Client, time: Option<Arc<AtomicU64>>, do
                 if expected_checksum != checksum {
                     drop(output);
                     tokio::fs::remove_file(&download.primary_target_path).await?;
-                    return Err(MirsError::Checksum { 
-                        url: download.url, 
-                        expected: expected_checksum.to_compact_string(), 
-                        hash: checksum.to_string() 
-                    })
+                    return Err(MirsError::Checksum {
+                        url: download.url,
+                        expected: expected_checksum.to_compact_string(),
+                        hash: checksum.to_string(),
+                    });
                 }
             } else {
                 while let Some(chunk) = response.chunk().await? {
                     output.write_all(&chunk).await?;
-            
+
                     progress_cb(chunk.len() as u64);
                 }
             }
 
             output.flush().await?;
             downloaded = true;
-            
+
             if let Some(time_to_set) = time {
                 let time = time_from_atomic(time_to_set);
                 let std_file = output.into_std().await;
                 tokio::task::spawn_blocking(move || {
                     std_file.set_times(FileTimes::new().set_modified(time))
-                }).await??;
+                })
+                .await??;
             }
         }
     }
 
     for symlink_path in download.symlink_paths {
         if symlink_path.exists() {
-            continue
+            continue;
         }
 
         let rel_primary_path = pathdiff::diff_paths(
             &download.primary_target_path,
             symlink_path.parent().expect("base dir needs to exist"),
-        ).expect("all files will be in some relative path");
+        )
+        .expect("all files will be in some relative path");
 
         create_dirs(&symlink_path).await?;
-        
+
         symlink(&rel_primary_path, &symlink_path).await?;
     }
-    
+
     Ok(downloaded)
 }
 
 pub fn time_from_atomic(time: Arc<AtomicU64>) -> SystemTime {
-    SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(time.load(Ordering::Relaxed)))
+    SystemTime::UNIX_EPOCH
+        .checked_add(Duration::from_secs(time.load(Ordering::Relaxed)))
         .expect("reversing stored timestamp should always be safe")
 }
 
 pub async fn create_dirs<P: AsRef<Path>>(path: P) -> Result<()> {
-    if let Some(parent_dir) = path.as_ref().parent() && !parent_dir.exists()  {
+    if let Some(parent_dir) = path.as_ref().parent()
+        && !parent_dir.exists()
+    {
         tokio::fs::create_dir_all(parent_dir).await?;
     }
 
@@ -221,15 +267,15 @@ pub async fn create_dirs<P: AsRef<Path>>(path: P) -> Result<()> {
 
 fn needs_downloading(dl: &Download) -> bool {
     if dl.always_download {
-        return true
+        return true;
     }
 
     if let Ok(metadata) = dl.primary_target_path.metadata() {
         if let Some(size) = dl.size {
-            return size != metadata.len()
+            return size != metadata.len();
         }
 
-        return false
+        return false;
     }
 
     true
@@ -242,5 +288,5 @@ pub struct Download {
     pub checksum: Option<Checksum>,
     pub primary_target_path: FilePath,
     pub symlink_paths: Vec<FilePath>,
-    pub always_download: bool
+    pub always_download: bool,
 }

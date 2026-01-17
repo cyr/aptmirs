@@ -1,11 +1,13 @@
-
 use std::sync::Arc;
 
 use ahash::{HashSet, HashSetExt};
-use async_channel::{bounded, Sender, Receiver};
+use async_channel::{Receiver, Sender, bounded};
 use tokio::{io::AsyncReadExt, sync::Mutex, task::JoinHandle};
 
-use crate::{error::{MirsError, Result}, metadata::{checksum::Checksum, FilePath, IndexFileEntry}};
+use crate::{
+    error::{MirsError, Result},
+    metadata::{FilePath, IndexFileEntry, checksum::Checksum},
+};
 
 use super::progress::Progress;
 
@@ -24,7 +26,7 @@ impl Default for Verifier {
             sender,
             _tasks: Default::default(),
             progress: Default::default(),
-            verified_set: Default::default()
+            verified_set: Default::default(),
         }
     }
 }
@@ -43,24 +45,28 @@ impl Verifier {
             let task_progress = progress.clone();
 
             let handle = tokio::spawn(async move {
-                let mut buf = vec![0u8; 1024*1024];
+                let mut buf = vec![0u8; 1024 * 1024];
 
                 while let Ok(task) = task_receiver.recv().await {
                     let file_size = task.size;
 
-                    match verify_file(&mut buf, task.clone(), 
-                        |downloaded| task_progress.bytes.inc_success(downloaded)
-                    ).await {
+                    match verify_file(&mut buf, task.clone(), |downloaded| {
+                        task_progress.bytes.inc_success(downloaded)
+                    })
+                    .await
+                    {
                         Ok(true) => task_progress.files.inc_success(1),
                         Ok(false) => {
                             task_progress.files.inc_failed(1);
                             eprintln!("checksum failed: {}", task.paths.first().unwrap());
-                        },
+                        }
                         Err(e) => {
-                            if let MirsError::Download { .. } = e && let Some(size) = file_size {
+                            if let MirsError::Download { .. } = e
+                                && let Some(size) = file_size
+                            {
                                 task_progress.bytes.inc_skipped(size);
                             }
-    
+
                             task_progress.files.inc_skipped(1);
                         }
                     }
@@ -74,7 +80,7 @@ impl Verifier {
             sender,
             _tasks: Arc::new(tasks),
             progress,
-            verified_set
+            verified_set,
         }
     }
 
@@ -85,7 +91,7 @@ impl Verifier {
             let mut verified_set = self.verified_set.lock().await;
 
             if verified_set.contains(path) {
-                return Ok(())
+                return Ok(());
             } else {
                 verified_set.insert(path.clone());
             }
@@ -107,37 +113,39 @@ impl Verifier {
     }
 }
 
-async fn verify_file<F>(buf: &mut [u8], verify_task: Arc<VerifyTask>, mut progress_cb: F) -> Result<bool>
-    where F: FnMut(u64) {
-    
+async fn verify_file<F>(
+    buf: &mut [u8],
+    verify_task: Arc<VerifyTask>,
+    mut progress_cb: F,
+) -> Result<bool>
+where
+    F: FnMut(u64),
+{
     for path in &verify_task.paths {
         let mut file = tokio::fs::File::open(path).await?;
 
         if verify_task.size.is_some_and(|v| v > 0) || verify_task.size.is_none() {
-    
             let mut hasher = verify_task.checksum.create_hasher();
-    
+
             loop {
                 match file.read(buf).await {
                     Ok(0) => break,
                     Ok(n) => {
                         progress_cb(n as u64);
                         hasher.consume(&buf[..n]);
-                    },
-                    Err(e) => {
-                        return Err(e.into())
                     }
+                    Err(e) => return Err(e.into()),
                 }
             }
-        
+
             let checksum = hasher.compute();
-    
+
             if verify_task.checksum != checksum {
-                return Ok(false)
+                return Ok(false);
             }
         }
     }
-    
+
     Ok(true)
 }
 
@@ -154,8 +162,10 @@ impl TryFrom<IndexFileEntry> for VerifyTask {
     fn try_from(value: IndexFileEntry) -> std::result::Result<Self, Self::Error> {
         Ok(Self {
             size: value.size,
-            checksum: value.checksum.ok_or_else(|| MirsError::VerifyTask { path: FilePath(value.path.clone()) })?,
+            checksum: value.checksum.ok_or_else(|| MirsError::VerifyTask {
+                path: FilePath(value.path.clone()),
+            })?,
             paths: vec![FilePath(value.path)],
         })
     }
-} 
+}

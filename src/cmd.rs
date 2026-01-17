@@ -1,15 +1,18 @@
 use std::{fmt::Display, sync::Arc};
 
 use async_trait::async_trait;
-use clap::{command, Parser};
+use clap::Parser;
 
 use crate::context::Context;
+use crate::error::Result;
 use crate::log;
 use crate::prune::PruneState;
 use crate::verify::VerifyState;
-use crate::{mirror::MirrorState, step::{Step, StepResult}};
-use crate::{config::MirrorOpts, pgp::PgpKeyStore, CliOpts};
-use crate::error::Result;
+use crate::{CliOpts, config::MirrorOpts, pgp::PgpKeyStore};
+use crate::{
+    mirror::MirrorState,
+    step::{Step, StepResult},
+};
 
 pub type DynStep<T, R> = Box<dyn Step<T, Result = R>>;
 pub type ArcContext<T> = Arc<Context<T>>;
@@ -20,16 +23,24 @@ pub type ContextWithSteps<T, R> = (ArcContext<T>, Vec<DynStep<T, R>>);
 pub enum Cmd {
     /// Mirrors the configured repositories. If no command is specified, this is the default behavior.
     Mirror {
-        #[clap(short, long, help = "Set the mtime of all downloaded files to the Date field in the Release")]
-        mtime: bool
+        #[clap(
+            short,
+            long,
+            help = "Set the mtime of all downloaded files to the Date field in the Release"
+        )]
+        mtime: bool,
     },
     /// Verifies the downloaded mirror(s) against the mirror configuration and outputs a report
     Verify,
     /// Removes unreferenced files in the downloaded mirror(s)  
-    Prune { 
-        #[clap(short, long, help = "Prints the files that the prune operation would delete")]
-        dry_run: bool 
-    }
+    Prune {
+        #[clap(
+            short,
+            long,
+            help = "Prints the files that the prune operation would delete"
+        )]
+        dry_run: bool,
+    },
 }
 
 impl Default for Cmd {
@@ -37,7 +48,6 @@ impl Default for Cmd {
         Cmd::Mirror { mtime: false }
     }
 }
-
 
 impl Display for Cmd {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -50,48 +60,56 @@ impl Display for Cmd {
 }
 
 impl Cmd {
-    pub async fn execute(self, opts: Vec<MirrorOpts>, cli_opts: Arc<CliOpts>, pgp_key_store: Arc<PgpKeyStore>) -> Result<()> {
+    pub async fn execute(
+        self,
+        opts: Vec<MirrorOpts>,
+        cli_opts: Arc<CliOpts>,
+        pgp_key_store: Arc<PgpKeyStore>,
+    ) -> Result<()> {
         match self {
             Cmd::Mirror { mtime } => {
                 let ctxs = Context::<MirrorState>::create(opts, cli_opts, pgp_key_store, mtime)?;
                 self.run_all(ctxs).await;
-            },
+            }
             Cmd::Prune { dry_run } => {
                 let ctxs = Context::<PruneState>::create(opts, cli_opts, dry_run)?;
                 self.run_all(ctxs).await;
-            },
+            }
             Cmd::Verify => {
                 let ctxs = Context::<VerifyState>::create(opts, cli_opts)?;
                 self.run_all(ctxs).await;
-            },
+            }
         }
 
         Ok(())
     }
 
-    async fn run<T: CmdState<Result = R>, R: CmdResult>(self, ctx: ArcContext<T>, steps: Vec<DynStep<T, R>>) -> R {
+    async fn run<T: CmdState<Result = R>, R: CmdResult>(
+        self,
+        ctx: ArcContext<T>,
+        steps: Vec<DynStep<T, R>>,
+    ) -> R {
         ctx.progress.reset();
 
         ctx.progress.set_total_steps(steps.len() as u8);
 
         for step in steps {
             ctx.next_step(step.step_name()).await;
-    
+
             match step.execute(ctx.clone()).await {
                 Ok(StepResult::Continue) => (),
-                Ok(StepResult::End(result)) => {
-                    return ctx.state.finalize_with_result(result).await
-                },
-                Err(e) => {
-                    return ctx.state.finalize_with_result(step.error(e)).await
-                },
+                Ok(StepResult::End(result)) => return ctx.state.finalize_with_result(result).await,
+                Err(e) => return ctx.state.finalize_with_result(step.error(e)).await,
             }
         }
-    
+
         ctx.state.finalize().await
     }
 
-    async fn run_all<T: CmdState<Result = R>, R: CmdResult>(self, ctxs: Vec<ContextWithSteps<T, R>>) {
+    async fn run_all<T: CmdState<Result = R>, R: CmdResult>(
+        self,
+        ctxs: Vec<ContextWithSteps<T, R>>,
+    ) {
         for (ctx, steps) in ctxs {
             log(format!("{self} {}", ctx.state));
             let result = self.run(ctx, steps).await;
@@ -100,10 +118,10 @@ impl Cmd {
     }
 }
 
-pub trait CmdResult : Display { }
+pub trait CmdResult: Display {}
 
 #[async_trait]
-pub trait CmdState : Display + Sized {
+pub trait CmdState: Display + Sized {
     type Result;
 
     async fn finalize(&self) -> Self::Result;

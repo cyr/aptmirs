@@ -7,23 +7,28 @@ use reqwest::StatusCode;
 use thiserror::Error;
 use tokio::task::JoinError;
 
-use crate::{downloader::Download, metadata::FilePath, progress::ProgressPart, verifier::VerifyTask};
+use crate::{
+    downloader::Download, metadata::FilePath, progress::ProgressPart, verifier::VerifyTask,
+};
 
 pub type Result<T> = std::result::Result<T, MirsError>;
 
 #[derive(Error, Debug)]
 pub enum MirsError {
     #[error(transparent)]
-    Io(#[from]std::io::Error),
+    Io(#[from] std::io::Error),
 
     #[error(transparent)]
-    Reqwest(#[from]reqwest::Error),
+    Reqwest(#[from] reqwest::Error),
 
     #[error(transparent)]
-    ParseInt(#[from]ParseIntError),
+    ParseInt(#[from] ParseIntError),
 
     #[error("failed to download {url}: {status_code}")]
-    Download { url: CompactString, status_code: StatusCode },
+    Download {
+        url: CompactString,
+        status_code: StatusCode,
+    },
 
     #[error("failed to parse line {line}")]
     ParsingRelease { line: CompactString },
@@ -32,10 +37,10 @@ pub enum MirsError {
     InvalidReleaseFile { inner: Box<MirsError> },
 
     #[error(transparent)]
-    Send(#[from]SendError<Box<Download>>),
+    Send(#[from] SendError<Box<Download>>),
 
     #[error(transparent)]
-    VerifyTaskSend(#[from]SendError<Arc<VerifyTask>>),
+    VerifyTaskSend(#[from] SendError<Arc<VerifyTask>>),
 
     #[error("unable to verify {path}")]
     VerifyTask { path: FilePath },
@@ -44,7 +49,10 @@ pub enum MirsError {
     NoReleaseFile,
 
     #[error("error parsing sum file {path}: {inner}")]
-    SumFileParsing { path: FilePath, inner: Box<MirsError> },
+    SumFileParsing {
+        path: FilePath,
+        inner: Box<MirsError>,
+    },
 
     #[error("invalid entry in sum file")]
     InvalidSumEntry { line: CompactString },
@@ -65,26 +73,30 @@ pub enum MirsError {
     Config { msg: CompactString },
 
     #[error("could not create a tmp folder: {msg}")]
-    Tmp { msg: CompactString},
+    Tmp { msg: CompactString },
 
     #[error(transparent)]
-    Hex(#[from]FromHexError),
+    Hex(#[from] FromHexError),
 
     #[error("{value} is not a recognized checksum")]
     IntoChecksum { value: String },
 
     #[error("checksum failed for: {url}, expected hash: {expected}, calculated hash: {hash}")]
-    Checksum { url: CompactString, expected: CompactString, hash: String },
-    
+    Checksum {
+        url: CompactString,
+        expected: CompactString,
+        hash: String,
+    },
+
     #[error(transparent)]
-    TokioJoin(#[from]JoinError),
+    TokioJoin(#[from] JoinError),
 
     #[error("error occurred while downloading release files: {inner}")]
     DownloadRelease { inner: Box<MirsError> },
-    
+
     #[error("error occurred while downloading indices: {inner}")]
     DownloadMetadata { inner: Box<MirsError> },
-    
+
     #[error("error occurred while downloading diffs: {inner}")]
     DownloadDiffs { inner: Box<MirsError> },
 
@@ -107,21 +119,35 @@ pub enum MirsError {
     Finalize { inner: Box<MirsError> },
 
     #[error("error reading {path}: {inner}")]
-    ReadingPackage { path: FilePath, inner: Box<MirsError> },
+    ReadingPackage {
+        path: FilePath,
+        inner: Box<MirsError>,
+    },
 
     #[error("error reading path: {inner}")]
-    WalkDir { #[from]inner: walkdir::Error },
+    WalkDir {
+        #[from]
+        inner: walkdir::Error,
+    },
 
     #[error("PGP error: {inner}")]
-    Pgp { #[from] inner: pgp::errors::Error },
+    Pgp {
+        #[from]
+        inner: pgp::errors::Error,
+    },
 
     #[error("PGP key path error: {inner}")]
     PgpKeyStore { inner: walkdir::Error },
 
     #[error("unable to read PGP pub key: {inner}")]
-    PgpPubKey { path: FilePath, inner: Box<MirsError> },
+    PgpPubKey {
+        path: FilePath,
+        inner: Box<MirsError>,
+    },
 
-    #[error("this repository does not provide a PGP signature, yet a public key has been provided - no verification can be made")]
+    #[error(
+        "this repository does not provide a PGP signature, yet a public key has been provided - no verification can be made"
+    )]
     PgpNotSupported,
 
     #[error("could not verify PGP signature")]
@@ -131,5 +157,5 @@ pub enum MirsError {
     NonIndexFileBuild { path: FilePath },
 
     #[error("repository is in an inconsistent state, file stats: {progress}")]
-    InconsistentRepository { progress: ProgressPart }
+    InconsistentRepository { progress: ProgressPart },
 }
