@@ -39,6 +39,7 @@ These options can be set as part of the configuration file:
 | pgp_pub_key   | Specify a PGP signing key to verify the repository. Any other key provided via the `--pgp-key-path` option will not be used. `pgp_verify` will be set to true if this option is set. |
 | pgp_verify    | Whether or not to verify the PGP signature of the release file. If no signature is available, requiring verification will make the mirroring operation fail. This will also require you to provide a source of keys, usually via the `--pgp-key-path` option. The only recognized value is `true`. |
 | udeb          | Whether or not to download udeb packages. The arch used for this is the same as for normal packages. The only recognized value is `true` |
+| short_name    | Alias this repository into the specified path in the output folder. This enables multiple repositories that are from separate sources to be stored within the same path, using the same pool. It is therefore important that the repositories are related (i.e. trixie-security + trixie/trixie-updates/trixie-backports). The output will be stored under this name as the base folder instead of the usual hostname with path subfolders. |
 
 ### Configuration examples
 
@@ -67,6 +68,13 @@ Mirror *amd64* packages from a debian repository and verify the PGP signature wi
 deb [arch=amd64 pgp_pub_key=/etc/apt/trusted.gpg.d/debian-archive-trixie-stable.asc] http://ftp.se.debian.org/debian  trixie  main contrib non-free non-free-firmware
 ```
 
+Alias two debian trixie repositories into the same output folder repository:
+
+```
+deb [short_name=debian] http://ftp.se.debian.org/debian             trixie           main contrib non-free non-free-firmware
+deb [short_name=debian] http://security.debian.org/debian-security  trixie-security  main contrib non-free non-free-firmware
+```
+
 ## Commands
 
 aptmirs operations are run via the command-line, and can be supplemented with command line
@@ -86,7 +94,7 @@ options. There are three operations: `mirror`, `prune` and `verify`.
 | ---------------| ------------ | ------------- | ----------- |
 | --config       | -c           | CONFIG=       | The path to the config file containing the mirror options. [default: /etc/apt/mirror.list] |
 | --force        | -f           | FORCE=        | Ignore the current release and package files and assume all metadata is stale. |
-| --dl-threads   | -d           | DL_THREADS=   | The maximum number of concurrent mirror download tasks. *Works only with the `mirror` and `verify` commands*. [default: 8] |
+| --dl-threads   | -d           | DL_THREADS=   | The maximum number of concurrent mirror download tasks. *Works only with the `mirror` command*. [default: 8] |
 | --dry-run      | -d           |               | Prints the files that the prune operation would delete. *Works only with the `prune` command*. |
 | --mtime        | -m           |               | Set the mtime of all downloaded files to the Date field in the Release. *Works only with the `mirror` command*. |
 | --output       | -o           | OUTPUT=       | The directory into where the mirrors will be downloaded. |
