@@ -126,10 +126,16 @@ impl Context<PruneState> {
         for opt in opts {
             let repo = Repository::build(&opt, &cli_opts)?;
 
-            if let Some(set) = mirrors.get_mut(&opt.url) {
+            let base_identifier = if let Some(short_name) = &opt.short_name {
+                short_name
+            } else {
+                &opt.url
+            };
+
+            if let Some(set) = mirrors.get_mut(base_identifier) {
                 set.push((opt, repo));
             } else {
-                mirrors.insert(opt.url.clone(), vec![(opt, repo)]);
+                mirrors.insert(base_identifier.clone(), vec![(opt, repo)]);
             }
         }
 

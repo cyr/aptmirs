@@ -122,13 +122,21 @@ pub struct MirrorOpts {
     pub pgp_pub_key: Option<CompactString>,
     pub pgp_verify: bool,
     pub udeb: bool,
+    pub short_name: Option<CompactString>,
 }
 
 impl Ord for MirrorOpts {
     fn cmp(&self, other: &Self) -> Ordering {
-        match self.url.cmp(&other.url) {
-            Ordering::Equal => {}
-            ord => return ord,
+        if let (Some(short_name), Some(other_short_name)) = (&self.short_name, &other.short_name) {
+            match short_name.cmp(other_short_name) {
+                Ordering::Equal => {}
+                ord => return ord,
+            }
+        } else {
+            match self.url.cmp(&other.url) {
+                Ordering::Equal => {}
+                ord => return ord,
+            }
         }
 
         self.suite.cmp(&other.suite)
@@ -137,7 +145,11 @@ impl Ord for MirrorOpts {
 
 impl PartialEq for MirrorOpts {
     fn eq(&self, other: &Self) -> bool {
-        self.url == other.url && self.suite == other.suite
+        if let (Some(short_name), Some(other_short_name)) = (&self.short_name, &other.short_name) {
+            short_name == other_short_name && self.suite == other.suite
+        } else {
+            self.url == other.url && self.suite == other.suite
+        }
     }
 }
 
@@ -152,6 +164,7 @@ impl MirrorOpts {
         let mut arch = Vec::new();
         let mut debian_installer_arch = Vec::new();
         let mut pgp_pub_key: Option<CompactString> = None;
+        let mut short_name: Option<CompactString> = None;
         let mut pgp_verify = false;
         let mut udeb = false;
 
@@ -199,6 +212,7 @@ impl MirrorOpts {
                     }
                     "pgp_verify" => pgp_verify = opt_val.to_lowercase() == "true",
                     "udeb" => udeb = opt_val.to_lowercase() == "true",
+                    "short_name" => short_name = Some(opt_val.to_compact_string()),
                     _ => (),
                 }
             }
@@ -253,6 +267,7 @@ impl MirrorOpts {
             pgp_pub_key,
             pgp_verify,
             udeb,
+            short_name,
         })
     }
 

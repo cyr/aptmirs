@@ -46,7 +46,11 @@ impl Repository {
             None
         };
 
-        let root_dir = local_dir_from_archive_url(&parsed_url, &cli_opts.output)?;
+        let root_dir = if let Some(short_name) = &mirror_opts.short_name {
+            cli_opts.output.join(short_name)
+        } else {
+            local_dir_from_archive_url(&parsed_url, &cli_opts.output)?
+        };
 
         Ok(Self {
             root_url,
@@ -76,7 +80,12 @@ impl Repository {
             None
         };
 
-        let root_dir = local_dir_from_archive_url(&parsed_url, &cli_opts.output)?;
+        let root_dir = if let Some(short_name) = &mirror_opts.short_name {
+            cli_opts.output.join(short_name)
+        } else {
+            local_dir_from_archive_url(&parsed_url, &cli_opts.output)?
+        };
+
         let tmp_dir = create_tmp_dir(&parsed_url, &mirror_opts.suite, &cli_opts.output)?;
 
         Ok(Arc::new(Self {
