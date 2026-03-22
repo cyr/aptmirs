@@ -1,7 +1,6 @@
 use std::{fmt::Display, sync::Arc};
 
 use async_trait::async_trait;
-use thiserror::Error;
 use tokio::sync::Mutex;
 use verification::Verify;
 
@@ -22,16 +21,29 @@ pub type VerifyContext = Arc<Context<VerifyState>>;
 
 pub mod verification;
 
-#[derive(Error, Debug)]
+#[derive(Debug)]
 pub enum VerifyResult {
-    #[error("Ok: {valid_files} valid, {corrupt_files} corrupt, {missing_files} missing")]
     Done {
         valid_files: u64,
         corrupt_files: u64,
         missing_files: u64,
     },
-    #[error("Fail: {0}")]
     Error(MirsError),
+}
+
+impl Display for VerifyResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VerifyResult::Done {
+                valid_files,
+                corrupt_files,
+                missing_files,
+            } => f.write_fmt(format_args!(
+                "Ok: {valid_files} valid, {corrupt_files} corrupt, {missing_files} missing"
+            )),
+            VerifyResult::Error(e) => f.write_fmt(format_args!("Fail: {e}")),
+        }
+    }
 }
 
 impl CmdResult for VerifyResult {}

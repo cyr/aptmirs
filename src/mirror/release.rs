@@ -11,10 +11,10 @@ use crate::{
         FilePath,
         checksum::Checksum,
         release::Release,
-        repository::{INRELEASE_FILE_NAME, RELEASE_FILE_NAME},
+        repository::{INRELEASE_FILE_NAME, RELEASE_FILE_NAME, RELEASE_GPG_FILE_NAME},
     },
     mirror::MirrorResult,
-    pgp::verify_release_signature,
+    pgp::KeyStore,
     progress::Progress,
     step::{Step, StepResult},
 };
@@ -65,30 +65,28 @@ impl Step<MirrorState> for DownloadRelease {
 
         progress_bar.finish_using_style();
 
-        let Some(release_file) = get_release_file(&files) else {
-            return Err(MirsError::NoReleaseFile);
-        };
+        let new_release = ReleaseFile::try_from(files.as_ref())?;
 
         if ctx.state.opts.pgp_verify {
             if ctx.state.repo.has_specified_pgp_key() {
-                verify_release_signature(&files, ctx.state.repo.as_ref())?;
+                ctx.state.repo.verify(&new_release)?;
             } else {
-                verify_release_signature(&files, ctx.state.pgp_key_store.as_ref())?;
+                ctx.state.pgp_key_store.verify(&new_release)?;
             }
         }
 
-        let local_release = ctx.state.repo.tmp_to_root(release_file);
+        let local_release = ctx.state.repo.tmp_to_root(new_release.release());
 
         if local_release.exists() {
             let local_checksum = Checksum::checksum_file(&local_release).await?;
-            let new_checksum = Checksum::checksum_file(release_file).await?;
+            let new_checksum = Checksum::checksum_file(new_release.release()).await?;
 
             output.new_release = local_checksum != new_checksum;
         } else {
             output.new_release = true;
         }
 
-        let mut release = Release::parse(release_file, &ctx.state.opts)
+        let mut release = Release::parse(new_release.release(), &ctx.state.opts)
             .await
             .map_err(|e| MirsError::InvalidReleaseFile { inner: Box::new(e) })?;
 
@@ -164,12 +162,49 @@ impl Step<MirrorState> for DownloadRelease {
     }
 }
 
-fn get_release_file(files: &[FilePath]) -> Option<&FilePath> {
-    for file in files.iter().filter(|f| f.exists()) {
-        if let INRELEASE_FILE_NAME | RELEASE_FILE_NAME = file.file_name() {
-            return Some(file);
+pub enum ReleaseFile<'a> {
+    Detached {
+        release: &'a FilePath,
+        signature: &'a FilePath,
+    },
+    Inline {
+        release: &'a FilePath,
+    },
+}
+
+impl<'a> TryFrom<&'a [FilePath]> for ReleaseFile<'a> {
+    type Error = MirsError;
+
+    fn try_from(files: &'a [FilePath]) -> std::result::Result<Self, Self::Error> {
+        for file in files.iter().filter(|f| f.exists()) {
+            if file.file_name() == INRELEASE_FILE_NAME {
+                return Ok(ReleaseFile::Inline { release: file });
+            }
+
+            if file.file_name() == RELEASE_FILE_NAME {
+                let Some(gpg_file) = files
+                    .iter()
+                    .find(|v| v.file_name() == RELEASE_GPG_FILE_NAME && v.exists())
+                else {
+                    continue;
+                };
+
+                return Ok(ReleaseFile::Detached {
+                    release: file,
+                    signature: gpg_file,
+                });
+            }
+        }
+
+        Err(MirsError::NoReleaseFile)
+    }
+}
+
+impl<'a> ReleaseFile<'a> {
+    pub fn release(&self) -> &'a FilePath {
+        match self {
+            ReleaseFile::Detached { release, .. } => release,
+            ReleaseFile::Inline { release } => release,
         }
     }
-
-    None
 }

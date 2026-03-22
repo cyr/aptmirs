@@ -113,13 +113,11 @@ impl Release {
 
                     checksum_state = ChecksumState::No;
 
-                    let (k, v) = v
-                        .split_once(": ")
-                        .ok_or_else(|| MirsError::ParsingRelease {
-                            line: v.to_compact_string(),
-                        })?;
+                    let (k, v) = v.split_once(":").ok_or_else(|| MirsError::ParsingRelease {
+                        line: v.to_compact_string(),
+                    })?;
 
-                    map.insert(k.to_compact_string(), v.to_compact_string());
+                    map.insert(k.to_compact_string(), v.trim().to_compact_string());
                 }
                 Line::Md5Start => checksum_state = ChecksumState::Md5,
                 Line::Sha1Start => checksum_state = ChecksumState::Sha1,

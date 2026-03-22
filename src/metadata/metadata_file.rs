@@ -50,8 +50,8 @@ impl MetadataFile {
         !matches!(self, Self::Other(_))
     }
 
-    pub fn extension(&self) -> Option<&str> {
-        self.path().extension()
+    pub fn extension(&self) -> Option<PackageExtension> {
+        self.path().extension().map(PackageExtension::from)
     }
 
     pub fn canonical_path(&self) -> FilePath {
@@ -149,7 +149,7 @@ pub fn deduplicate_metadata(files: Vec<MetadataFile>) -> Vec<MetadataFile> {
         match &file {
             MetadataFile::Packages(..) | MetadataFile::Sources(..) => {
                 if let Some(old) = map.get_mut(&canonical) {
-                    if is_extension_preferred(old.extension(), file.extension()) {
+                    if file.extension() >= old.extension() {
                         *old = file;
                     }
 
@@ -178,13 +178,42 @@ pub fn deduplicate_metadata(files: Vec<MetadataFile>) -> Vec<MetadataFile> {
     map.into_values().collect()
 }
 
-fn is_extension_preferred(old: Option<&str>, new: Option<&str>) -> bool {
-    matches!(
-        (old, new),
-        (_, Some("gz")) | (_, Some("xz")) | (_, Some("bz2"))
-    )
-}
-
 fn is_sumfile_preferred(old: &str, new: &str) -> bool {
     matches!((old, new), (_, "SHA512SUMS") | (_, "SHA256SUMS"))
+}
+
+#[derive(PartialEq)]
+pub enum PackageExtension {
+    Gz,
+    Xz,
+    Bz2,
+    Other(CompactString),
+}
+
+impl From<&str> for PackageExtension {
+    fn from(value: &str) -> Self {
+        match value {
+            "xz" => PackageExtension::Xz,
+            "bz2" => PackageExtension::Bz2,
+            "gz" => PackageExtension::Gz,
+            _ => PackageExtension::Other(value.to_compact_string()),
+        }
+    }
+}
+
+impl PackageExtension {
+    pub fn preferrence(&self) -> u8 {
+        match self {
+            PackageExtension::Gz => 5,
+            PackageExtension::Xz => 10,
+            PackageExtension::Bz2 => 2,
+            PackageExtension::Other(_) => 0,
+        }
+    }
+}
+
+impl PartialOrd for PackageExtension {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.preferrence().partial_cmp(&other.preferrence())
+    }
 }

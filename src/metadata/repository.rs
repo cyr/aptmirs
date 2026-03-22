@@ -354,3 +354,24 @@ fn local_dir_from_archive_url(url: &Url, dir: &FilePath) -> Result<FilePath> {
 
     Ok(base_dir)
 }
+
+pub fn get_rooted_release_files(root: &FilePath) -> Vec<FilePath> {
+    [
+        root.join(INRELEASE_FILE_NAME),
+        root.join(RELEASE_FILE_NAME),
+        root.join(RELEASE_GPG_FILE_NAME),
+    ]
+    .into_iter()
+    .filter(|v| v.exists())
+    .collect()
+}
+
+pub fn pick_release(files: &[FilePath]) -> Option<&FilePath> {
+    for f in files {
+        if let INRELEASE_FILE_NAME | RELEASE_FILE_NAME = f.file_name() {
+            return Some(f);
+        }
+    }
+
+    None
+}

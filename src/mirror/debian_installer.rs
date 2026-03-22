@@ -54,9 +54,8 @@ impl Step<MirrorState> for DownloadDebianInstaller {
                 let mut old_map = if old_path.exists() {
                     MetadataFile::SumFile(old_path)
                         .into_reader()?
-                        .map(|v| v.unwrap())
-                        .map(|v| (v.path.clone(), v))
-                        .collect::<HashMap<CompactString, IndexFileEntry>>()
+                        .map(|v| v.map(|inner| (inner.path.clone(), inner)))
+                        .collect::<Result<HashMap<CompactString, IndexFileEntry>>>()?
                 } else {
                     HashMap::new()
                 };

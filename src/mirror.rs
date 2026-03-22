@@ -7,7 +7,6 @@ use indicatif::HumanBytes;
 use metadata::DownloadMetadata;
 use packages::DownloadFromPackageIndices;
 use release::DownloadRelease;
-use thiserror::Error;
 use tokio::{sync::Mutex, task::spawn_blocking};
 
 use crate::error::Result;
@@ -32,21 +31,39 @@ pub mod release;
 pub type MirrorDynStep = Box<dyn Step<MirrorState, Result = MirrorResult>>;
 pub type MirrorContext = Arc<Context<MirrorState>>;
 
-#[derive(Error, Debug)]
+#[derive(Debug)]
 pub enum MirrorResult {
-    #[error("Ok: {} downloaded, {} packages/source files", HumanBytes(*.total_download_size), .num_packages_downloaded)]
     NewRelease {
         total_download_size: u64,
         num_packages_downloaded: u64,
     },
-    #[error("Ok: release unchanged")]
     ReleaseUnchanged,
-    #[error("Ok: new release, but changes do not apply to configured selections")]
     IrrelevantChanges,
-    #[error("Ok: release unchanged, but attempted to download missing files")]
     ReleaseUnchangedButIncomplete,
-    #[error("Fail: {0}")]
     Error(MirsError),
+}
+
+impl Display for MirrorResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MirrorResult::NewRelease {
+                total_download_size,
+                num_packages_downloaded,
+            } => f.write_fmt(format_args!(
+                "Ok: {} downloaded, {} packages/source files",
+                HumanBytes(*total_download_size),
+                num_packages_downloaded
+            )),
+            MirrorResult::ReleaseUnchanged => f.write_str("Ok: release unchanged"),
+            MirrorResult::IrrelevantChanges => {
+                f.write_str("Ok: new release, but changes do not apply to configured selections")
+            }
+            MirrorResult::ReleaseUnchangedButIncomplete => {
+                f.write_str("Ok: release unchanged, but attempted to download missing files")
+            }
+            MirrorResult::Error(e) => f.write_fmt(format_args!("Fail: {e}")),
+        }
+    }
 }
 
 impl CmdResult for MirrorResult {}

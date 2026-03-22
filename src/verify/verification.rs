@@ -5,6 +5,7 @@ use compact_str::format_compact;
 use tokio::{runtime::Handle, task::spawn_blocking};
 
 use crate::error::Result;
+use crate::metadata::repository::{get_rooted_release_files, pick_release};
 use crate::{
     context::Context,
     error::MirsError,
@@ -12,7 +13,6 @@ use crate::{
         FilePath,
         metadata_file::{MetadataFile, deduplicate_metadata},
         release::{FileEntry, Release},
-        repository::{INRELEASE_FILE_NAME, RELEASE_FILE_NAME, RELEASE_GPG_FILE_NAME},
     },
     mirror::verify_and_prune,
     step::{Step, StepResult},
@@ -143,25 +143,4 @@ impl Step<VerifyState> for Verify {
 
         Ok(StepResult::Continue)
     }
-}
-
-fn get_rooted_release_files(root: &FilePath) -> Vec<FilePath> {
-    [
-        root.join(INRELEASE_FILE_NAME),
-        root.join(RELEASE_FILE_NAME),
-        root.join(RELEASE_GPG_FILE_NAME),
-    ]
-    .into_iter()
-    .filter(|v| v.exists())
-    .collect()
-}
-
-fn pick_release(files: &[FilePath]) -> Option<&FilePath> {
-    for f in files {
-        if let INRELEASE_FILE_NAME | RELEASE_FILE_NAME = f.file_name() {
-            return Some(f);
-        }
-    }
-
-    None
 }

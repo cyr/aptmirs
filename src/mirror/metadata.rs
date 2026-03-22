@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use compact_str::format_compact;
 
 use crate::error::Result;
+use crate::metadata::repository::RELEASE_GPG_FILE_NAME;
 use crate::{
     context::Context,
     error::MirsError,
@@ -51,8 +52,9 @@ impl Step<MirrorState> for DownloadMetadata {
 
             let file_path_in_tmp = ctx.state.repo.to_path_in_tmp(&url);
 
-            if file_path_in_tmp.exists() && file_path_in_tmp.file_name() == RELEASE_FILE_NAME
-                || file_path_in_tmp.file_name() == INRELEASE_FILE_NAME
+            if file_path_in_tmp.exists()
+                && let RELEASE_FILE_NAME | RELEASE_GPG_FILE_NAME | INRELEASE_FILE_NAME =
+                    file_path_in_tmp.file_name()
             {
                 eprintln!("WARNING: Self-referential metadata exists, ignoring");
                 continue;

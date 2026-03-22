@@ -45,7 +45,7 @@ pub enum MirsError {
     #[error("unable to verify {path}")]
     VerifyTask { path: FilePath },
 
-    #[error("url does not point to a valid repository, no release file found")]
+    #[error("url does not point to a valid repository, no (or incomplete) release file found")]
     NoReleaseFile,
 
     #[error("error parsing sum file {path}: {inner}")]
@@ -144,11 +144,6 @@ pub enum MirsError {
         path: FilePath,
         inner: Box<MirsError>,
     },
-
-    #[error(
-        "this repository does not provide a PGP signature, yet a public key has been provided - no verification can be made"
-    )]
-    PgpNotSupported,
 
     #[error("could not verify PGP signature")]
     PgpNotVerified,

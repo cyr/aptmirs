@@ -20,6 +20,12 @@ pub enum Checksum {
     Sha512([u8; 64]),
 }
 
+impl PartialOrd for Checksum {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.size().partial_cmp(&other.size())
+    }
+}
+
 impl TryFrom<&str> for Checksum {
     type Error = MirsError;
 
@@ -120,7 +126,7 @@ impl Checksum {
         Ok(hasher.compute())
     }
 
-    pub fn bits(&self) -> usize {
+    pub fn size(&self) -> usize {
         match self {
             Checksum::Md5(v) => v.len(),
             Checksum::Sha1(v) => v.len(),
@@ -129,8 +135,17 @@ impl Checksum {
         }
     }
 
+    pub fn checksum_type(&self) -> ChecksumType {
+        match self {
+            Checksum::Md5(_) => ChecksumType::Md5,
+            Checksum::Sha1(_) => ChecksumType::Sha1,
+            Checksum::Sha256(_) => ChecksumType::Sha256,
+            Checksum::Sha512(_) => ChecksumType::Sha512,
+        }
+    }
+
     pub fn replace_if_stronger(&mut self, other: Checksum) {
-        if self.bits() >= other.bits() {
+        if self.checksum_type() >= other.checksum_type() {
             return;
         }
 
@@ -140,21 +155,36 @@ impl Checksum {
 
 impl ChecksumType {
     pub fn is_stronger(first: &Option<Checksum>, second: ChecksumType) -> bool {
-        matches!(
-            (first, second),
-            (_, ChecksumType::Sha512)
-                | (_, ChecksumType::Sha256)
-                | (_, ChecksumType::Sha1)
-                | (_, ChecksumType::Md5)
-        )
+        match first {
+            None => true,
+            Some(checksum) => second > checksum.checksum_type(),
+        }
     }
 }
 
+#[derive(PartialEq)]
 pub enum ChecksumType {
     Md5,
     Sha1,
     Sha256,
     Sha512,
+}
+
+impl ChecksumType {
+    pub fn size(&self) -> u8 {
+        match self {
+            ChecksumType::Md5 => 16,
+            ChecksumType::Sha1 => 20,
+            ChecksumType::Sha256 => 32,
+            ChecksumType::Sha512 => 64,
+        }
+    }
+}
+
+impl PartialOrd for ChecksumType {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.size().partial_cmp(&other.size())
+    }
 }
 
 pub trait Hasher: Sync + Send {
@@ -247,5 +277,29 @@ impl Hasher for Sha512Hasher {
 
     fn compute(self: Box<Self>) -> Checksum {
         Checksum::Sha512(self.hasher.finalize_fixed().into())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::metadata::checksum::*;
+
+    #[tokio::test]
+    async fn any_stronger_than_empty() {
+        assert!(ChecksumType::is_stronger(&None, ChecksumType::Md5));
+    }
+
+    #[tokio::test]
+    async fn sha256_stronger_than_md5() {
+        let md5 = Checksum::Md5([0; 16]);
+
+        assert!(ChecksumType::is_stronger(&Some(md5), ChecksumType::Sha256));
+    }
+
+    #[tokio::test]
+    async fn md5_weaker_than_sha256() {
+        let sha256 = Checksum::Sha256([0; 32]);
+
+        assert!(!ChecksumType::is_stronger(&Some(sha256), ChecksumType::Md5));
     }
 }

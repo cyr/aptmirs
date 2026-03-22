@@ -11,7 +11,7 @@ use walkdir::WalkDir;
 use crate::CliOpts;
 use crate::error::{MirsError, Result};
 use crate::metadata::FilePath;
-use crate::metadata::repository::{INRELEASE_FILE_NAME, RELEASE_FILE_NAME, RELEASE_GPG_FILE_NAME};
+use crate::mirror::release::ReleaseFile;
 
 #[derive(Default)]
 pub struct PgpKeyStore {
@@ -101,6 +101,15 @@ pub trait KeyStore {
         signature: &DetachedSignature,
         content: &str,
     ) -> Result<()>;
+
+    fn verify(&self, release: &ReleaseFile) -> Result<()> {
+        match release {
+            ReleaseFile::Detached { release, signature } => {
+                self.verify_standalone(signature, release)
+            }
+            ReleaseFile::Inline { release } => self.verify_inlined(release),
+        }
+    }
 
     fn verify_inlined(&self, inlined_message: &FilePath) -> Result<()> {
         let content = std::fs::read_to_string(inlined_message)?;
@@ -254,25 +263,4 @@ pub fn read_public_key(path: &FilePath) -> Result<SignedPublicKey> {
     signed_public_key.verify()?;
 
     Ok(signed_public_key)
-}
-
-pub fn verify_release_signature<K: KeyStore>(files: &[FilePath], key_store: &K) -> Result<()> {
-    if let Some(inrelease_file) = files.iter().find(|v| v.file_name() == INRELEASE_FILE_NAME) {
-        key_store.verify_inlined(inrelease_file)?;
-    } else {
-        let Some(release_file) = files.iter().find(|v| v.file_name() == RELEASE_FILE_NAME) else {
-            return Err(MirsError::PgpNotSupported);
-        };
-
-        let Some(release_file_signature) = files
-            .iter()
-            .find(|v| v.file_name() == RELEASE_GPG_FILE_NAME)
-        else {
-            return Err(MirsError::PgpNotSupported);
-        };
-
-        key_store.verify_standalone(release_file_signature, release_file)?;
-    }
-
-    Ok(())
 }

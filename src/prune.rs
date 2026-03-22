@@ -6,7 +6,6 @@ use compact_str::CompactString;
 use delete::Delete;
 use indicatif::HumanBytes;
 use inventory::Inventory;
-use thiserror::Error;
 use tokio::sync::Mutex;
 
 use crate::error::Result;
@@ -27,17 +26,33 @@ mod inventory;
 pub type PruneDynStep = Box<dyn Step<PruneState, Result = PruneResult>>;
 pub type PruneContext = Arc<Context<PruneState>>;
 
-#[derive(Error, Debug)]
+#[derive(Debug)]
 pub enum PruneResult {
-    #[error("Ok: valid {valid_files} ({}), pruned {deleted_files} ({})", HumanBytes(*.valid_bytes), HumanBytes(*.deleted_bytes))]
     Pruned {
         valid_files: u64,
         valid_bytes: u64,
         deleted_files: u64,
         deleted_bytes: u64,
     },
-    #[error("Fail: {0}")]
     Error(MirsError),
+}
+
+impl Display for PruneResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PruneResult::Pruned {
+                valid_files,
+                valid_bytes,
+                deleted_files,
+                deleted_bytes,
+            } => f.write_fmt(format_args!(
+                "Ok: valid {valid_files} ({}), pruned {deleted_files} ({})",
+                HumanBytes(*valid_bytes),
+                HumanBytes(*deleted_bytes)
+            )),
+            PruneResult::Error(e) => f.write_fmt(format_args!("Fail: {e}")),
+        }
+    }
 }
 
 impl CmdResult for PruneResult {}
