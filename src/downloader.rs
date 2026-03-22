@@ -176,14 +176,24 @@ where
         let mut output = tokio::fs::File::create(&download.primary_target_path).await?;
 
         if download.size.is_some_and(|v| v > 0) || download.size.is_none() {
-            let mut response = http_client.get(download.url.as_str()).send().await?;
+            let mut response = match http_client.get(download.url.as_str()).send().await {
+                Ok(r) => r,
+                Err(..) => {
+                    drop(output);
+                    tokio::fs::remove_file(&download.primary_target_path).await?;
+                    return Err(MirsError::Download {
+                        url: download.url.clone(),
+                        status_code: None,
+                    });
+                }  
+            };
 
             if response.status() != StatusCode::OK {
                 drop(output);
                 tokio::fs::remove_file(&download.primary_target_path).await?;
                 return Err(MirsError::Download {
                     url: download.url.clone(),
-                    status_code: response.status(),
+                    status_code: Some(response.status()),
                 });
             }
 

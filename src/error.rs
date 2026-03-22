@@ -24,10 +24,10 @@ pub enum MirsError {
     #[error(transparent)]
     ParseInt(#[from] ParseIntError),
 
-    #[error("failed to download {url}: {status_code}")]
+    #[error("failed to download {url}: {status_code:?}")]
     Download {
         url: CompactString,
-        status_code: StatusCode,
+        status_code: Option<StatusCode>,
     },
 
     #[error("failed to parse line {line}")]
