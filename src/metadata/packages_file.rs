@@ -60,7 +60,13 @@ impl Iterator for PackagesFile {
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             match self.reader.read_line(&mut self.buf) {
-                Ok(0) => return None,
+                Ok(0) => {
+                    if !self.buf.is_empty() {
+                        break
+                    }
+
+                    return None
+                },
                 Ok(len) => {
                     if len == 1 {
                         break;
