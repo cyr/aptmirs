@@ -2,7 +2,7 @@
 name = "aptmirs"
 description = "A simple tool for mirroring apt/deb repositories"
 authors = ["cyr"]
-version = "0.20.0"
+version = "0.20.1"
 edition = "2024"
 license = "MIT"
 readme = "README.md"
