@@ -118,3 +118,23 @@ Verify operation
 ```
 ./aptmirs --config ./mirror.list --output /opt/mirror-root verify
 ```
+
+## Nix
+
+Build the package:
+
+```
+nix build
+```
+
+Run it directly from the flake:
+
+```
+nix run -- --help
+```
+
+Open a development shell with the Rust toolchain:
+
+```
+nix develop
+```
