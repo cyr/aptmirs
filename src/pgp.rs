@@ -41,10 +41,7 @@ impl PgpKeyStore {
         let mut sub_key_ids = BTreeMap::new();
 
         for entry in WalkDir::new(path).follow_links(true) {
-            let entry = match entry {
-                Ok(entry) => entry,
-                Err(inner) => return Err(MirsError::PgpKeyStore { inner }),
-            };
+            let entry = entry.map_err(|inner| MirsError::PgpKeyStore { inner })?;
 
             if entry.file_type().is_dir() {
                 continue;
@@ -65,7 +62,7 @@ impl PgpKeyStore {
             };
 
             let fingerprint = hex::encode(public_key.fingerprint().as_bytes());
-            let key_id = hex::encode(public_key.key_id());
+            let key_id = hex::encode(public_key.legacy_key_id().as_ref());
 
             primary_fingerprints.insert(fingerprint, public_key.clone());
             primary_key_ids.insert(key_id, public_key.clone());
@@ -74,7 +71,7 @@ impl PgpKeyStore {
                 let sub_key = Arc::new(sub_key.clone());
 
                 let fingerprint = hex::encode(sub_key.fingerprint().as_bytes());
-                let key_id = hex::encode(sub_key.key_id());
+                let key_id = hex::encode(sub_key.legacy_key_id());
 
                 sub_fingerprints.insert(fingerprint, sub_key.clone());
                 sub_key_ids.insert(key_id, sub_key);
@@ -137,7 +134,7 @@ impl KeyStore for PgpKeyStore {
         content: &str,
     ) -> Result<()> {
         for signature in msg.signatures() {
-            if signature.issuer_fingerprint().is_empty() && signature.issuer().is_empty() {
+            if signature.issuer_fingerprint().is_empty() && signature.issuer_key_id().is_empty() {
                 for key in self.primary_key_ids.values() {
                     if signature.verify(key.as_ref(), content.as_bytes()).is_ok() {
                         return Ok(());
@@ -169,7 +166,7 @@ impl KeyStore for PgpKeyStore {
                 }
             }
 
-            for key_id in signature.issuer() {
+            for key_id in signature.issuer_key_id() {
                 let hex_key_id = hex::encode(key_id.as_ref());
 
                 if let Some(key) = self.primary_key_ids.get(&hex_key_id)
@@ -195,7 +192,7 @@ impl KeyStore for PgpKeyStore {
         content: &str,
     ) -> Result<()> {
         if signature.signature.issuer_fingerprint().is_empty()
-            && signature.signature.issuer().is_empty()
+            && signature.signature.issuer_key_id().is_empty()
         {
             for key in self.primary_key_ids.values() {
                 if signature.verify(key.as_ref(), content.as_bytes()).is_ok() {
@@ -228,7 +225,7 @@ impl KeyStore for PgpKeyStore {
             }
         }
 
-        for key_id in signature.signature.issuer() {
+        for key_id in signature.signature.issuer_key_id() {
             let hex_key_id = hex::encode(key_id.as_ref());
 
             if let Some(key) = self.primary_key_ids.get(&hex_key_id)
@@ -260,7 +257,7 @@ pub fn read_public_key(path: &FilePath) -> Result<SignedPublicKey> {
             inner: Box::new(e.into()),
         })?;
 
-    signed_public_key.verify()?;
+    signed_public_key.verify_bindings()?;
 
     Ok(signed_public_key)
 }
