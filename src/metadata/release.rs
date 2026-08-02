@@ -4,6 +4,7 @@ use std::{
 };
 
 use compact_str::{CompactString, ToCompactString, format_compact};
+use jiff::{fmt::strtime::BrokenDownTime, tz::Offset};
 use tokio::{
     fs::File,
     io::{AsyncBufReadExt, BufReader},
@@ -144,13 +145,13 @@ impl Release {
     pub fn release_time(&self) -> Option<u64> {
         let release_date_field = self.map.get("Date")?;
 
-        let dt: jiff::Timestamp =
+        let mut dt: BrokenDownTime =
             jiff::fmt::strtime::parse("%a, %d %b %Y %H:%M:%S UTC", release_date_field)
-                .ok()?
-                .to_timestamp()
                 .ok()?;
 
-        Some(dt.as_second() as u64)
+        dt.set_offset(Some(Offset::UTC));
+
+        Some(dt.to_timestamp().ok()?.as_second() as u64)
     }
 
     pub fn components(&self) -> Option<&CompactString> {
