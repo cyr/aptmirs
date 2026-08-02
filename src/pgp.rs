@@ -49,17 +49,11 @@ impl PgpKeyStore {
 
             let file = FilePath::from(entry.path());
 
-            if !matches!(
-                file.extension(),
-                Some("asc") | Some("gpg") | Some("pgp") | None
-            ) {
+            if !matches!(file.extension(), Some("asc" | "gpg" | "pgp") | None) {
                 continue;
             }
 
-            let public_key = match read_public_key(&file) {
-                Ok(key) => Arc::new(key),
-                Err(e) => return Err(e),
-            };
+            let public_key = read_public_key(&file).map(Arc::new)?;
 
             let fingerprint = hex::encode(public_key.fingerprint().as_bytes());
             let key_id = hex::encode(public_key.legacy_key_id().as_ref());
@@ -80,8 +74,8 @@ impl PgpKeyStore {
 
         Ok(PgpKeyStore {
             primary_fingerprints,
-            sub_fingerprints,
             primary_key_ids,
+            sub_fingerprints,
             sub_key_ids,
         })
     }

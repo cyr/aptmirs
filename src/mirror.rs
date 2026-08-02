@@ -191,7 +191,7 @@ impl Context<MirrorState> {
         ];
 
         if opts.debian_installer() {
-            steps.push(Box::new(DownloadDebianInstaller))
+            steps.push(Box::new(DownloadDebianInstaller));
         }
 
         steps
@@ -235,10 +235,10 @@ pub fn verify_and_prune(files: &mut Vec<MetadataFile>) {
             break;
         }
 
-        if !files[pos].exists() {
-            files.swap_remove(pos);
-        } else {
+        if files[pos].exists() {
             pos += 1;
+        } else {
+            files.swap_remove(pos);
         }
     }
 }

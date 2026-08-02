@@ -118,9 +118,9 @@ impl Step<MirrorState> for DownloadRelease {
         if release.files.is_empty() {
             if output.new_release {
                 return Ok(StepResult::End(MirrorResult::IrrelevantChanges));
-            } else {
-                return Ok(StepResult::End(MirrorResult::ReleaseUnchanged));
             }
+
+            return Ok(StepResult::End(MirrorResult::ReleaseUnchanged));
         }
 
         if let Some(release_components) = release.components() {
@@ -203,8 +203,7 @@ impl<'a> TryFrom<&'a [FilePath]> for ReleaseFile<'a> {
 impl<'a> ReleaseFile<'a> {
     pub fn release(&self) -> &'a FilePath {
         match self {
-            ReleaseFile::Detached { release, .. } => release,
-            ReleaseFile::Inline { release } => release,
+            ReleaseFile::Detached { release, .. } | ReleaseFile::Inline { release } => release,
         }
     }
 }

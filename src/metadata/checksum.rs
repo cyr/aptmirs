@@ -149,7 +149,7 @@ impl Checksum {
             return;
         }
 
-        *self = other
+        *self = other;
     }
 }
 
@@ -162,7 +162,7 @@ impl ChecksumType {
     }
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Copy)]
 pub enum ChecksumType {
     Md5,
     Sha1,
@@ -206,7 +206,7 @@ impl Md5Hasher {
 
 impl Hasher for Md5Hasher {
     fn consume(&mut self, data: &[u8]) {
-        self.ctx.consume(data)
+        self.ctx.consume(data);
     }
 
     fn compute(self: Box<Self>) -> Checksum {
@@ -228,7 +228,7 @@ impl Sha1Hasher {
 
 impl Hasher for Sha1Hasher {
     fn consume(&mut self, data: &[u8]) {
-        Update::update(&mut self.hasher, data)
+        Update::update(&mut self.hasher, data);
     }
 
     fn compute(self: Box<Self>) -> Checksum {
@@ -250,7 +250,7 @@ impl Sha256Hasher {
 
 impl Hasher for Sha256Hasher {
     fn consume(&mut self, data: &[u8]) {
-        Update::update(&mut self.hasher, data)
+        Update::update(&mut self.hasher, data);
     }
 
     fn compute(self: Box<Self>) -> Checksum {
@@ -272,7 +272,7 @@ impl Sha512Hasher {
 
 impl Hasher for Sha512Hasher {
     fn consume(&mut self, data: &[u8]) {
-        Update::update(&mut self.hasher, data)
+        Update::update(&mut self.hasher, data);
     }
 
     fn compute(self: Box<Self>) -> Checksum {

@@ -3,7 +3,6 @@ use std::{
     path::{Component, Path},
 };
 
-use chrono::DateTime;
 use compact_str::{CompactString, ToCompactString, format_compact};
 use tokio::{
     fs::File,
@@ -102,8 +101,8 @@ impl Release {
                                 line: v.to_compact_string(),
                             });
                         }
-                        _ => continue,
-                    };
+                        _ => (),
+                    }
                 }
                 Line::Metadata(v) => {
                     if let ChecksumState::PgpMessage | ChecksumState::PgpSignature = checksum_state
@@ -113,7 +112,7 @@ impl Release {
 
                     checksum_state = ChecksumState::No;
 
-                    let (k, v) = v.split_once(":").ok_or_else(|| MirsError::ParsingRelease {
+                    let (k, v) = v.split_once(':').ok_or_else(|| MirsError::ParsingRelease {
                         line: v.to_compact_string(),
                     })?;
 
@@ -139,20 +138,19 @@ impl Release {
     pub fn acquire_by_hash(&self) -> bool {
         self.map
             .get("Acquire-By-Hash")
-            .map(|v| v.as_str() == "yes")
-            .unwrap_or(false)
+            .is_some_and(|v| v.as_str() == "yes")
     }
 
     pub fn release_time(&self) -> Option<u64> {
         let release_date_field = self.map.get("Date")?;
 
-        let dt =
-            chrono::NaiveDateTime::parse_from_str(release_date_field, "%a, %d %b %Y %H:%M:%S UTC")
+        let dt: jiff::Timestamp =
+            jiff::fmt::strtime::parse("%a, %d %b %Y %H:%M:%S UTC", release_date_field)
+                .ok()?
+                .to_timestamp()
                 .ok()?;
 
-        let timestamp = (dt.and_utc() - DateTime::UNIX_EPOCH).num_seconds() as u64;
-
-        Some(timestamp)
+        Some(dt.as_second() as u64)
     }
 
     pub fn components(&self) -> Option<&CompactString> {
@@ -172,11 +170,11 @@ impl Release {
 
             let size = entry.size;
 
-            if !valid_file(&old_path, &entry).await? {
+            if valid_file(&old_path, &entry).await? {
+                progress.bytes.inc_success(size);
+            } else {
                 pruned.insert(path, entry);
                 progress.bytes.inc_failed(size);
-            } else {
-                progress.bytes.inc_success(size);
             }
         }
 

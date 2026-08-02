@@ -2,7 +2,7 @@ use std::{
     fmt::Display,
     sync::{
         Arc,
-        atomic::{AtomicU8, AtomicU64, Ordering},
+        atomic::{AtomicU8, AtomicU64, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -19,7 +19,7 @@ pub struct Progress {
     pub files: ProgressPart,
     pub bytes: ProgressPart,
     pub total_bytes: Arc<AtomicU64>,
-    total_steps: Arc<AtomicU8>,
+    total_steps: Arc<AtomicUsize>,
 }
 
 impl Progress {
@@ -30,7 +30,7 @@ impl Progress {
             files: ProgressPart::new(),
             bytes: ProgressPart::new(),
             total_bytes: Arc::new(AtomicU64::new(0)),
-            total_steps: Arc::new(AtomicU8::new(4)),
+            total_steps: Arc::new(AtomicUsize::new(4)),
         }
     }
 
@@ -41,7 +41,7 @@ impl Progress {
             files: ProgressPart::new(),
             bytes: ProgressPart::new(),
             total_bytes: Arc::new(AtomicU64::new(0)),
-            total_steps: Arc::new(AtomicU8::new(4)),
+            total_steps: Arc::new(AtomicUsize::new(4)),
         }
     }
 
@@ -157,7 +157,7 @@ impl Progress {
         self.total_steps.store(5, Ordering::SeqCst);
     }
 
-    pub fn set_total_steps(&self, num_steps: u8) {
+    pub fn set_total_steps(&self, num_steps: usize) {
         self.total_steps.store(num_steps, Ordering::SeqCst);
     }
 
@@ -173,7 +173,7 @@ impl Progress {
     pub async fn wait_for_completion(&self, progress_bar: &ProgressBar) {
         while self.files.remaining() > 0 {
             self.update_for_files(progress_bar);
-            sleep(Duration::from_millis(100)).await
+            sleep(Duration::from_millis(100)).await;
         }
 
         self.total_bytes
@@ -223,7 +223,7 @@ impl ProgressPart {
     }
 
     pub fn set_success(&self, count: u64) {
-        self.success.store(count, Ordering::SeqCst)
+        self.success.store(count, Ordering::SeqCst);
     }
 
     pub fn inc_skipped(&self, count: u64) {

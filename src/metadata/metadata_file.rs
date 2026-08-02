@@ -179,7 +179,7 @@ pub fn deduplicate_metadata(files: Vec<MetadataFile>) -> Vec<MetadataFile> {
 }
 
 fn is_sumfile_preferred(old: &str, new: &str) -> bool {
-    matches!((old, new), (_, "SHA512SUMS") | (_, "SHA256SUMS"))
+    matches!((old, new), (_, "SHA512SUMS" | "SHA256SUMS"))
 }
 
 #[derive(PartialEq)]

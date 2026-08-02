@@ -63,9 +63,9 @@ impl Display for VerifyState {
 }
 #[derive(Default)]
 pub struct VerifyOutput {
-    pub total_corrupt: u64,
-    pub total_missing: u64,
-    pub total_valid: u64,
+    pub corrupt: u64,
+    pub missing: u64,
+    pub valid: u64,
 }
 
 #[async_trait]
@@ -76,9 +76,9 @@ impl CmdState for VerifyState {
         let output = self.output.lock().await;
 
         VerifyResult::Done {
-            valid_files: output.total_valid,
-            corrupt_files: output.total_corrupt,
-            missing_files: output.total_missing,
+            valid_files: output.valid,
+            corrupt_files: output.corrupt,
+            missing_files: output.missing,
         }
     }
 

@@ -22,6 +22,9 @@ pub enum MirsError {
     Reqwest(#[from] reqwest::Error),
 
     #[error(transparent)]
+    Jiff(#[from] jiff::Error),
+
+    #[error(transparent)]
     ParseInt(#[from] ParseIntError),
 
     #[error("failed to download {url}: {status_code:?}")]

@@ -137,9 +137,9 @@ impl Step<VerifyState> for Verify {
 
         progress.wait_for_completion(&progress_bar).await;
 
-        output.total_corrupt = progress.files.failed();
-        output.total_missing = progress.files.skipped();
-        output.total_valid = progress.files.success();
+        output.corrupt = progress.files.failed();
+        output.missing = progress.files.skipped();
+        output.valid = progress.files.success();
 
         Ok(StepResult::Continue)
     }

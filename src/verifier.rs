@@ -24,9 +24,9 @@ impl Default for Verifier {
         let (sender, _) = bounded(1);
         Self {
             sender,
-            _tasks: Default::default(),
-            progress: Default::default(),
-            verified_set: Default::default(),
+            _tasks: Arc::default(),
+            progress: Progress::default(),
+            verified_set: Arc::default(),
         }
     }
 }
@@ -51,7 +51,7 @@ impl Verifier {
                     let file_size = task.size;
 
                     match verify_file(&mut buf, task.clone(), |downloaded| {
-                        task_progress.bytes.inc_success(downloaded)
+                        task_progress.bytes.inc_success(downloaded);
                     })
                     .await
                     {
@@ -92,9 +92,9 @@ impl Verifier {
 
             if verified_set.contains(path) {
                 return Ok(());
-            } else {
-                verified_set.insert(path.clone());
             }
+
+            verified_set.insert(path.clone());
         }
 
         if let Some(size) = verify_task.size {
@@ -124,7 +124,7 @@ where
     for path in &verify_task.paths {
         let mut file = tokio::fs::File::open(path).await?;
 
-        if verify_task.size.is_some_and(|v| v > 0) || verify_task.size.is_none() {
+        if verify_task.size.is_none_or(|v| v > 0) {
             let mut hasher = verify_task.checksum.create_hasher();
 
             loop {

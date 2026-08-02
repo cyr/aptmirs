@@ -45,9 +45,9 @@ impl Default for Downloader {
         let (sender, _) = bounded(1);
         Self {
             sender,
-            _tasks: Default::default(),
-            progress: Default::default(),
-            http_client: Default::default(),
+            _tasks: Arc::default(),
+            progress: Progress::default(),
+            http_client: Client::default(),
             time_to_set: now(),
             mtime: false,
         }
@@ -120,7 +120,7 @@ impl Downloader {
         let file_size = dl.size;
 
         match download_file(http_client, time, dl, |downloaded| {
-            progress.bytes.inc_success(downloaded)
+            progress.bytes.inc_success(downloaded);
         })
         .await
         {
@@ -146,8 +146,9 @@ impl Downloader {
         } else {
             None
         };
+
         Downloader::download_and_track(&self.http_client, time, self.progress.clone(), download)
-            .await
+            .await;
     }
 
     pub fn progress(&self) -> Progress {
@@ -175,17 +176,14 @@ where
 
         let mut output = tokio::fs::File::create(&download.primary_target_path).await?;
 
-        if download.size.is_some_and(|v| v > 0) || download.size.is_none() {
-            let mut response = match http_client.get(download.url.as_str()).send().await {
-                Ok(r) => r,
-                Err(..) => {
-                    drop(output);
-                    tokio::fs::remove_file(&download.primary_target_path).await?;
-                    return Err(MirsError::Download {
-                        url: download.url.clone(),
-                        status_code: None,
-                    });
-                }  
+        if download.size.is_none_or(|v| v > 0) {
+            let Ok(mut response) = http_client.get(download.url.as_str()).send().await else {
+                drop(output);
+                tokio::fs::remove_file(&download.primary_target_path).await?;
+                return Err(MirsError::Download {
+                    url: download.url.clone(),
+                    status_code: None,
+                });
             };
 
             if response.status() != StatusCode::OK {

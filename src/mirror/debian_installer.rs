@@ -8,7 +8,7 @@ use tokio::{runtime::Handle, task::spawn_blocking};
 use crate::{
     context::Context,
     error::{MirsError, Result},
-    metadata::{FilePath, IndexFileEntry, metadata_file::MetadataFile},
+    metadata::{FilePath, IndexFileEntry, metadata_file::MetadataFile, repository::Repository},
     step::{Step, StepResult},
 };
 
@@ -83,7 +83,7 @@ impl Step<MirrorState> for DownloadDebianInstaller {
 
                     let url = task_repo.to_url_in_root(new_rel_path.as_str());
 
-                    let dl = task_repo.create_raw_download(new_path, url, file.checksum);
+                    let dl = Repository::create_raw_download(new_path, url, file.checksum);
 
                     async_handle.block_on(async { task_downloader.queue(dl).await })?;
                 }

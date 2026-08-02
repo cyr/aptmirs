@@ -91,7 +91,7 @@ impl Cmd {
     ) -> R {
         ctx.progress.reset();
 
-        ctx.progress.set_total_steps(steps.len() as u8);
+        ctx.progress.set_total_steps(steps.len());
 
         for step in steps {
             ctx.next_step(step.step_name()).await;

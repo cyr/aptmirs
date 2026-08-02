@@ -86,11 +86,11 @@ impl Display for PruneState {
             .join(" ");
 
         if packages && source {
-            f.write_str("deb+deb-src")?
+            f.write_str("deb+deb-src")?;
         } else if packages {
-            f.write_str("deb")?
+            f.write_str("deb")?;
         } else if source {
-            f.write_str("deb-src")?
+            f.write_str("deb-src")?;
         }
 
         f.write_fmt(format_args!(" {url} {suites}"))

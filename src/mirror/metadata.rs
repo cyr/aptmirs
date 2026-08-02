@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use compact_str::format_compact;
 
 use crate::error::Result;
-use crate::metadata::repository::RELEASE_GPG_FILE_NAME;
+use crate::metadata::repository::{RELEASE_GPG_FILE_NAME, Repository};
 use crate::{
     context::Context,
     error::MirsError,
@@ -95,9 +95,9 @@ impl Step<MirrorState> for DownloadMetadata {
                 metadata.push(file);
             }
 
-            let download = ctx.state.repo.create_metadata_download(
+            let download = Repository::create_metadata_download(
                 url,
-                file_path_in_tmp,
+                &file_path_in_tmp,
                 file_entry,
                 add_by_hash,
             )?;

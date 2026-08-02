@@ -14,24 +14,24 @@ keywords = ["debian", "repository", "apt", "mirror"]
 [dependencies]
 ahash = "0.8.12"
 async-channel = "2.5.0"
-async-trait = "0.1.89"
+async-trait = "0.1.91"
 bzip2 = "0.6.1"
-chrono = "0.4.44"
-clap = { version = "4.6.1", features = ["cargo", "derive", "env"] }
-compact_str = { version = "0.9.0", features = ["serde"] }
-console = "0.16.3"
+clap = { version = "4.6.5", features = ["cargo", "derive", "env"] }
+compact_str = { version = "0.9.1", features = ["serde"] }
+console = "0.16.4"
 flate2 = "1.1.9"
 hex = "0.4.3"
-indicatif = "0.18.4"
-md5 = "0.8.0"
+indicatif = "0.18.6"
+jiff = "0.2.35"
+md5 = "0.8.1"
 pathdiff = "0.2.3"
 pgp = "0.19.0"
-regex = "1.12.3"
-reqwest = { version = "0.13.2" }
+regex = "1.13.1"
+reqwest = { version = "0.13.4" }
 sha1 = "0.11.0"
 sha2 = "0.11.0"
-thiserror = "2.0.18"
-tokio = { version = "1.52.0", features = ["macros", "rt-multi-thread", "fs"] }
+thiserror = "2.0.19"
+tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread", "fs"] }
 walkdir = "2.5.0"
 xz2 = "0.1.7"
 

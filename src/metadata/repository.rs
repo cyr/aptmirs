@@ -199,7 +199,6 @@ impl Repository {
     }
 
     pub fn create_raw_download(
-        &self,
         target_path: FilePath,
         url: CompactString,
         checksum: Option<Checksum>,
@@ -215,16 +214,15 @@ impl Repository {
     }
 
     pub fn create_metadata_download(
-        &self,
         url: CompactString,
-        file_path: FilePath,
+        file_path: &FilePath,
         file_entry: FileEntry,
         by_hash: bool,
     ) -> Result<Box<Download>> {
         let size = file_entry.size;
 
         let (checksum, primary_target_path, symlink_paths) =
-            file_entry.into_paths(&file_path, by_hash)?;
+            file_entry.into_paths(file_path, by_hash)?;
 
         Ok(Box::new(Download {
             url,
@@ -294,9 +292,9 @@ fn sanitize_name(part: &str) -> CompactString {
 
     for c in char_iter {
         if c == '/' {
-            sanitized.push('_')
+            sanitized.push('_');
         } else {
-            sanitized.push(c)
+            sanitized.push(c);
         }
     }
 
@@ -362,7 +360,7 @@ pub fn get_rooted_release_files(root: &FilePath) -> Vec<FilePath> {
         root.join(RELEASE_GPG_FILE_NAME),
     ]
     .into_iter()
-    .filter(|v| v.exists())
+    .filter(FilePath::exists)
     .collect()
 }
 

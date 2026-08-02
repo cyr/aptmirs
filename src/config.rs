@@ -48,7 +48,6 @@ pub async fn read_config(path: &FilePath) -> Result<Vec<MirrorOpts>> {
                     "{} failed parsing config on line {line_num}: {e}",
                     crate::now()
                 );
-                continue;
             }
         }
     }
@@ -97,10 +96,10 @@ fn merge_similar(mut mirrors: Vec<MirrorOpts>) -> Vec<MirrorOpts> {
                     last.pgp_verify |= new.pgp_verify;
 
                     if let Some(pgp_pub_key) = new.pgp_pub_key.take() {
-                        last.pgp_pub_key = Some(pgp_pub_key)
+                        last.pgp_pub_key = Some(pgp_pub_key);
                     }
                 } else {
-                    a.push(new)
+                    a.push(new);
                 }
             } else {
                 a.push(new);
@@ -253,7 +252,7 @@ impl MirrorOpts {
         }
 
         if arch.is_empty() {
-            arch.push(CompactString::const_new("amd64"))
+            arch.push(CompactString::const_new("amd64"));
         }
 
         Ok(Self {
@@ -291,11 +290,11 @@ impl MirrorOpts {
 impl Display for MirrorOpts {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.packages && self.source {
-            f.write_str("deb+deb-src")?
+            f.write_str("deb+deb-src")?;
         } else if self.packages {
-            f.write_str("deb")?
+            f.write_str("deb")?;
         } else if self.source {
-            f.write_str("deb-src")?
+            f.write_str("deb-src")?;
         }
 
         if self.flat() {

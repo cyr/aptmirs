@@ -85,7 +85,7 @@ impl Iterator for SourcesFile {
 
             while let Some(line) = line_iter.next() {
                 if let Some(d) = line.strip_prefix("Directory: ") {
-                    maybe_dir = Some(d)
+                    maybe_dir = Some(d);
                 } else if matches!(
                     line,
                     "Files:" | "Checksums-Sha1:" | "Checksums-Sha256:" | "Checksums-Sha512:"
@@ -124,7 +124,7 @@ impl Iterator for SourcesFile {
                         let file_name = CompactString::from(file_name);
 
                         if let Some(entry) = self.files_buf.get_mut(&file_name) {
-                            entry.checksum.replace_if_stronger(checksum)
+                            entry.checksum.replace_if_stronger(checksum);
                         } else {
                             self.files_buf.insert(
                                 file_name.to_compact_string(),
