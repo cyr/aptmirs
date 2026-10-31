@@ -50,7 +50,6 @@ impl HttpClient {
             .find(|AptAuth { host_prefix, .. }| url.as_str().starts_with(host_prefix))
         {
             builder = builder.basic_auth(auth.username.clone(), Some(auth.password.clone()));
-            eprintln!("using basic auth for this url");
         }
 
         builder
