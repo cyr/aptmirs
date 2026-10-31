@@ -146,12 +146,11 @@ impl Release {
         let release_date_field = self.map.get("Date")?;
 
         let mut dt: BrokenDownTime =
-            jiff::fmt::strtime::parse("%a, %d %b %Y %H:%M:%S UTC", release_date_field)
-                .ok()?;
+            jiff::fmt::strtime::parse("%a, %d %b %Y %H:%M:%S UTC", release_date_field).ok()?;
 
         dt.set_offset(Some(Offset::UTC));
 
-        Some(dt.to_timestamp().ok()?.as_second() as u64)
+        Some(dt.to_timestamp().ok()?.as_second().cast_unsigned())
     }
 
     pub fn components(&self) -> Option<&CompactString> {

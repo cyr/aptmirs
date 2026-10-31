@@ -8,6 +8,7 @@ use pgp::PgpKeyStore;
 
 use crate::error::Result;
 
+mod apt_auth;
 mod cmd;
 mod config;
 mod context;
@@ -29,10 +30,11 @@ async fn main() -> Result<()> {
     let result = {
         let opts = read_config(&cli_opts.config).await?;
         let pgp_key_store = Arc::new(PgpKeyStore::try_from(&cli_opts)?);
+        let apt_auth = apt_auth::read_auth(&cli_opts).await?;
 
         cli_opts
             .command()
-            .execute(opts, cli_opts, pgp_key_store)
+            .execute(opts, cli_opts, pgp_key_store, apt_auth)
             .await
     };
 
@@ -84,6 +86,15 @@ struct CliOpts {
         help = "Path to folder where PGP public keys reside. All valid keys will be used in signature verification where applicable"
     )]
     pgp_key_path: Option<FilePath>,
+
+    #[arg(
+        short,
+        long,
+        env,
+        value_name = "APT_AUTH_PATH",
+        help = "Path to the folder where apt auth configs reside. All valid conf-files will be taken into account."
+    )]
+    apt_auth_path: Option<FilePath>,
 
     #[arg(
         short,

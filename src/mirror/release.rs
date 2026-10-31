@@ -148,7 +148,7 @@ impl Step<MirrorState> for DownloadRelease {
         {
             ctx.state.downloader.set_time(time_to_set);
 
-            let system_time = time_from_atomic(ctx.state.downloader.time_to_set.clone());
+            let system_time = time_from_atomic(&ctx.state.downloader.time_to_set);
 
             for f in files.into_iter().filter(FilePath::exists) {
                 File::open(f)?.set_modified(system_time)?;

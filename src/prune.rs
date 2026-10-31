@@ -1,7 +1,6 @@
 use std::{collections::BTreeMap, fmt::Display, sync::Arc};
 
 use ahash::HashMap;
-use async_trait::async_trait;
 use compact_str::CompactString;
 use delete::Delete;
 use indicatif::HumanBytes;
@@ -106,7 +105,6 @@ pub struct PruneOutput {
     pub total_deleted_bytes: u64,
 }
 
-#[async_trait]
 impl CmdState for PruneState {
     type Result = PruneResult;
 

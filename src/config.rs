@@ -1,5 +1,6 @@
 use compact_str::{CompactString, ToCompactString, format_compact};
-use std::{cmp::Ordering, fmt::Display};
+use regex::Regex;
+use std::{cmp::Ordering, fmt::Display, sync::Arc};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 use crate::{
@@ -27,15 +28,19 @@ pub async fn read_config(path: &FilePath) -> Result<Vec<MirrorOpts>> {
 
         line_num += 1;
 
-        let mut line = match reader.read_line(&mut buf).await {
+        let line = match reader.read_line(&mut buf).await {
             Ok(0) => break,
-            Ok(len) => (buf[..len]).trim(),
+            Ok(len) => {
+                let mut line = &buf[..len];
+
+                if let Some(pos) = line.find('#') {
+                    line = &line[..pos];
+                }
+
+                line.trim()
+            }
             Err(e) => return Err(e.into()),
         };
-
-        if let Some(pos) = line.find('#') {
-            line = &line[..pos];
-        }
 
         if line.is_empty() {
             continue;
@@ -68,36 +73,10 @@ fn merge_similar(mut mirrors: Vec<MirrorOpts>) -> Vec<MirrorOpts> {
 
     mirrors
         .into_iter()
-        .fold(Vec::new(), |mut a: Vec<MirrorOpts>, mut new| {
+        .fold(Vec::new(), |mut a: Vec<MirrorOpts>, new| {
             if let Some(last) = a.last_mut() {
                 if last == &new {
-                    for component in new.components {
-                        if !last.components.contains(&component) {
-                            last.components.push(component);
-                        }
-                    }
-
-                    for arch in new.arch {
-                        if !last.arch.contains(&arch) {
-                            last.arch.push(arch);
-                        }
-                    }
-
-                    for di_arch in new.debian_installer_arch {
-                        if !last.debian_installer_arch.contains(&di_arch) {
-                            last.debian_installer_arch.push(di_arch);
-                        }
-                    }
-
-                    last.udeb |= new.udeb;
-                    last.packages |= new.packages;
-                    last.source |= new.source;
-
-                    last.pgp_verify |= new.pgp_verify;
-
-                    if let Some(pgp_pub_key) = new.pgp_pub_key.take() {
-                        last.pgp_pub_key = Some(pgp_pub_key);
-                    }
+                    last.merge(new);
                 } else {
                     a.push(new);
                 }
@@ -109,7 +88,7 @@ fn merge_similar(mut mirrors: Vec<MirrorOpts>) -> Vec<MirrorOpts> {
         })
 }
 
-#[derive(Eq, Default)]
+#[derive(Default)]
 pub struct MirrorOpts {
     pub url: CompactString,
     pub suite: CompactString,
@@ -122,7 +101,10 @@ pub struct MirrorOpts {
     pub pgp_verify: bool,
     pub udeb: bool,
     pub short_name: Option<CompactString>,
+    pub filter: Arc<[Regex]>,
 }
+
+impl Eq for MirrorOpts {}
 
 impl Ord for MirrorOpts {
     fn cmp(&self, other: &Self) -> Ordering {
@@ -159,11 +141,42 @@ impl PartialOrd for MirrorOpts {
 }
 
 impl MirrorOpts {
+    pub fn merge(&mut self, mut other: MirrorOpts) {
+        for component in other.components {
+            if !self.components.contains(&component) {
+                self.components.push(component);
+            }
+        }
+
+        for arch in other.arch {
+            if !self.arch.contains(&arch) {
+                self.arch.push(arch);
+            }
+        }
+
+        for di_arch in other.debian_installer_arch {
+            if !self.debian_installer_arch.contains(&di_arch) {
+                self.debian_installer_arch.push(di_arch);
+            }
+        }
+
+        self.udeb |= other.udeb;
+        self.packages |= other.packages;
+        self.source |= other.source;
+
+        self.pgp_verify |= other.pgp_verify;
+
+        if let Some(pgp_pub_key) = other.pgp_pub_key.take() {
+            self.pgp_pub_key = Some(pgp_pub_key);
+        }
+    }
+
     pub fn try_from(mut line: &str) -> Result<MirrorOpts> {
         let mut arch = Vec::new();
         let mut debian_installer_arch = Vec::new();
         let mut pgp_pub_key: Option<CompactString> = None;
         let mut short_name: Option<CompactString> = None;
+        let mut filter = Vec::new();
         let mut pgp_verify = false;
         let mut udeb = false;
 
@@ -202,6 +215,7 @@ impl MirrorOpts {
                 };
 
                 match opt_key {
+                    "filter" => filter.push(Regex::new(opt_val)?),
                     "arch" => arch.extend(opt_val.split(',').map(|v| v.to_compact_string())),
                     "di_arch" => debian_installer_arch
                         .extend(opt_val.split(',').map(|v| v.to_compact_string())),
@@ -267,6 +281,7 @@ impl MirrorOpts {
             pgp_verify,
             udeb,
             short_name,
+            filter: filter.into(),
         })
     }
 

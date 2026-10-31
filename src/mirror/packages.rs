@@ -42,7 +42,7 @@ impl Step<MirrorState> for DownloadFromPackageIndices {
         let packages_files = output
             .take_metadata(|f| matches!(f, MetadataFile::Packages(..) | MetadataFile::Sources(..)))
             .into_iter()
-            .map(MetadataFile::into_reader)
+            .map(|v| MetadataFile::into_reader_with_opts(v, &ctx.state.opts))
             .collect::<Result<Vec<_>>>()?;
 
         file_progress.files.inc_total(packages_files.len() as u64);

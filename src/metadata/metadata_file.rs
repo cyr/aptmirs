@@ -1,7 +1,9 @@
+use std::sync::Arc;
+
 use ahash::{HashMap, HashMapExt};
 use compact_str::{CompactString, ToCompactString, format_compact};
 
-use crate::{Result, error::MirsError};
+use crate::{Result, config::MirrorOpts, error::MirsError};
 
 use super::{
     FilePath, IndexFileEntryIterator, diff_index_file::DiffIndexFile, packages_file::PackagesFile,
@@ -75,9 +77,24 @@ impl MetadataFile {
         self.path().exists()
     }
 
+    pub fn into_reader_with_opts(
+        self,
+        opts: &MirrorOpts,
+    ) -> Result<Box<dyn IndexFileEntryIterator>> {
+        match &self {
+            MetadataFile::Packages(..) => PackagesFile::build(self, opts.filter.clone()),
+            MetadataFile::Sources(..) => SourcesFile::build(self),
+            MetadataFile::DiffIndex(..) => DiffIndexFile::build(self),
+            MetadataFile::SumFile(..) => SumFile::build(self),
+            MetadataFile::Other(file_path) => Err(MirsError::NonIndexFileBuild {
+                path: file_path.to_owned(),
+            }),
+        }
+    }
+
     pub fn into_reader(self) -> Result<Box<dyn IndexFileEntryIterator>> {
         match &self {
-            MetadataFile::Packages(..) => PackagesFile::build(self),
+            MetadataFile::Packages(..) => PackagesFile::build(self, Arc::default()),
             MetadataFile::Sources(..) => SourcesFile::build(self),
             MetadataFile::DiffIndex(..) => DiffIndexFile::build(self),
             MetadataFile::SumFile(..) => SumFile::build(self),

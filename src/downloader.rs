@@ -10,10 +10,11 @@ use std::{
 
 use async_channel::{Receiver, Sender, bounded};
 use compact_str::{CompactString, ToCompactString};
-use reqwest::{Client, StatusCode};
+use reqwest::{Client, IntoUrl, RequestBuilder, StatusCode};
 use tokio::{fs::symlink, io::AsyncWriteExt, task::JoinHandle};
 
 use crate::{
+    apt_auth::AptAuth,
     error::{MirsError, Result},
     metadata::{FilePath, checksum::Checksum},
 };
@@ -30,12 +31,38 @@ fn now() -> Arc<AtomicU64> {
     )
 }
 
+#[derive(Debug, Default, Clone)]
+pub struct HttpClient {
+    pub client: Client,
+    auth: Arc<Vec<AptAuth>>,
+}
+
+impl HttpClient {
+    pub fn get<U>(&self, url: U) -> RequestBuilder
+    where
+        U: IntoUrl,
+    {
+        let mut builder = self.client.get(url.as_str());
+
+        if let Some(auth) = self
+            .auth
+            .iter()
+            .find(|AptAuth { host_prefix, .. }| url.as_str().starts_with(host_prefix))
+        {
+            builder = builder.basic_auth(auth.username.clone(), Some(auth.password.clone()));
+            eprintln!("using basic auth for this url");
+        }
+
+        builder
+    }
+}
+
 #[derive(Clone)]
 pub struct Downloader {
     sender: Sender<Box<Download>>,
     _tasks: Arc<Vec<JoinHandle<()>>>,
     progress: Progress,
-    http_client: Client,
+    http_client: HttpClient,
     pub time_to_set: Arc<AtomicU64>,
     mtime: bool,
 }
@@ -47,7 +74,7 @@ impl Default for Downloader {
             sender,
             _tasks: Arc::default(),
             progress: Progress::default(),
-            http_client: Client::default(),
+            http_client: HttpClient::default(),
             time_to_set: now(),
             mtime: false,
         }
@@ -55,12 +82,15 @@ impl Default for Downloader {
 }
 
 impl Downloader {
-    pub fn build(num_threads: u8, mtime: bool) -> Self {
+    pub fn build(num_threads: u8, mtime: bool, apt_auth: Vec<AptAuth>) -> Self {
         let (sender, receiver) = bounded(1024);
 
         let mut tasks = Vec::with_capacity(num_threads as usize);
         let progress = Progress::new();
-        let http_client = reqwest::Client::new();
+        let http_client = HttpClient {
+            client: reqwest::Client::new(),
+            auth: Arc::new(apt_auth),
+        };
 
         let time_to_set = now();
 
@@ -112,7 +142,7 @@ impl Downloader {
     }
 
     async fn download_and_track(
-        http_client: &Client,
+        http_client: &HttpClient,
         time: Option<Arc<AtomicU64>>,
         progress: Progress,
         dl: Box<Download>,
@@ -161,7 +191,7 @@ impl Downloader {
 }
 
 async fn download_file<F>(
-    http_client: &Client,
+    http_client: &HttpClient,
     time: Option<Arc<AtomicU64>>,
     download: Box<Download>,
     mut progress_cb: F,
@@ -228,7 +258,7 @@ where
             downloaded = true;
 
             if let Some(time_to_set) = time {
-                let time = time_from_atomic(time_to_set);
+                let time = time_from_atomic(&time_to_set);
                 let std_file = output.into_std().await;
                 tokio::task::spawn_blocking(move || {
                     std_file.set_times(FileTimes::new().set_modified(time))
@@ -257,7 +287,7 @@ where
     Ok(downloaded)
 }
 
-pub fn time_from_atomic(time: Arc<AtomicU64>) -> SystemTime {
+pub fn time_from_atomic(time: &Arc<AtomicU64>) -> SystemTime {
     SystemTime::UNIX_EPOCH
         .checked_add(Duration::from_secs(time.load(Ordering::Relaxed)))
         .expect("reversing stored timestamp should always be safe")

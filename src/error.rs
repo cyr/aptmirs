@@ -156,4 +156,7 @@ pub enum MirsError {
 
     #[error("repository is in an inconsistent state, file stats: {progress}")]
     InconsistentRepository { progress: ProgressPart },
+
+    #[error(transparent)]
+    Regex(#[from] regex::Error),
 }

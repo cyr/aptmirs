@@ -99,6 +99,7 @@ options. There are three operations: `mirror`, `prune` and `verify`.
 | --mtime        | -m           |               | Set the mtime of all downloaded files to the Date field in the Release. *Works only with the `mirror` command*. |
 | --output       | -o           | OUTPUT=       | The directory into where the mirrors will be downloaded. |
 | --pgp-key-path | -p           | PGP_KEY_PATH= | Path to folder where PGP public keys reside. All valid keys will be used in signature verification where applicable. |
+| --apt-auth-path | -a          | APT_AUTH_PATH= | Path to folder where apt auth config files reside. All valid confs will be used where applicable. Expected format is the same as regular apt_auth.conf, similar to .netrc. |
 | --help         | -h           |               | Print help. |
 | --version      | -V           |               | Print version. |
 

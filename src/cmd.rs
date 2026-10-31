@@ -1,8 +1,8 @@
 use std::{fmt::Display, sync::Arc};
 
-use async_trait::async_trait;
 use clap::Parser;
 
+use crate::apt_auth::AptAuth;
 use crate::context::Context;
 use crate::error::Result;
 use crate::log;
@@ -65,10 +65,12 @@ impl Cmd {
         opts: Vec<MirrorOpts>,
         cli_opts: Arc<CliOpts>,
         pgp_key_store: Arc<PgpKeyStore>,
+        apt_auth: Vec<AptAuth>,
     ) -> Result<()> {
         match self {
             Cmd::Mirror { mtime } => {
-                let ctxs = Context::<MirrorState>::create(opts, cli_opts, pgp_key_store, mtime)?;
+                let ctxs =
+                    Context::<MirrorState>::create(opts, cli_opts, pgp_key_store, mtime, apt_auth)?;
                 self.run_all(ctxs).await;
             }
             Cmd::Prune { dry_run } => {
@@ -120,7 +122,6 @@ impl Cmd {
 
 pub trait CmdResult: Display {}
 
-#[async_trait]
 pub trait CmdState: Display + Sized {
     type Result;
 

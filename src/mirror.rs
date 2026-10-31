@@ -1,6 +1,5 @@
 use std::{fmt::Display, path::Path, sync::Arc};
 
-use async_trait::async_trait;
 use debian_installer::DownloadDebianInstaller;
 use diffs::DownloadFromDiffs;
 use indicatif::HumanBytes;
@@ -9,6 +8,7 @@ use packages::DownloadFromPackageIndices;
 use release::DownloadRelease;
 use tokio::{sync::Mutex, task::spawn_blocking};
 
+use crate::apt_auth::AptAuth;
 use crate::error::Result;
 use crate::{
     CliOpts,
@@ -146,7 +146,6 @@ impl Display for MirrorState {
     }
 }
 
-#[async_trait]
 impl CmdState for MirrorState {
     type Result = MirrorResult;
 
@@ -202,8 +201,9 @@ impl Context<MirrorState> {
         cli_opts: Arc<CliOpts>,
         pgp_key_store: Arc<PgpKeyStore>,
         mtime: bool,
+        apt_auth: Vec<AptAuth>,
     ) -> Result<Vec<(MirrorContext, Vec<MirrorDynStep>)>> {
-        let downloader = Downloader::build(cli_opts.dl_threads, mtime);
+        let downloader = Downloader::build(cli_opts.dl_threads, mtime, apt_auth);
 
         opts.into_iter()
             .map(|o| {

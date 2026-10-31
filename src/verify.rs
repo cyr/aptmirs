@@ -1,6 +1,5 @@
 use std::{fmt::Display, sync::Arc};
 
-use async_trait::async_trait;
 use tokio::sync::Mutex;
 use verification::Verify;
 
@@ -68,7 +67,6 @@ pub struct VerifyOutput {
     pub valid: u64,
 }
 
-#[async_trait]
 impl CmdState for VerifyState {
     type Result = VerifyResult;
 
