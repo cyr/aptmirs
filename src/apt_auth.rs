@@ -2,7 +2,7 @@ use std::{os::unix::fs::MetadataExt, path::Path, sync::Arc};
 
 use tokio::{fs::File, io::AsyncReadExt};
 
-use crate::{CliOpts, error::Result};
+use crate::{CliOpts, error::Result, log};
 
 const MACHINE: &str = "machine";
 const LOGIN: &str = "login";
@@ -87,7 +87,13 @@ pub async fn read_auth(opts: &CliOpts) -> Result<Vec<AptAuth>> {
             continue;
         }
 
-        vec.extend(AptAuth::parse(entry.path()).await?);
+        match AptAuth::parse(entry.path()).await {
+            Ok(v) => vec.extend(v),
+            Err(e) => {
+                log(format!("unable to parse apt_auth config at {}: {e}", entry.path().to_string_lossy()));
+                continue
+            },
+        }
     }
 
     Ok(vec)
