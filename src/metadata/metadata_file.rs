@@ -82,7 +82,7 @@ impl MetadataFile {
         opts: &MirrorOpts,
     ) -> Result<Box<dyn IndexFileEntryIterator>> {
         match &self {
-            MetadataFile::Packages(..) => PackagesFile::build(self, opts.filter.clone()),
+            MetadataFile::Packages(..) => PackagesFile::build(self, opts.filter.clone(), opts.num_pkg_versions),
             MetadataFile::Sources(..) => SourcesFile::build(self),
             MetadataFile::DiffIndex(..) => DiffIndexFile::build(self),
             MetadataFile::SumFile(..) => SumFile::build(self),
@@ -94,7 +94,7 @@ impl MetadataFile {
 
     pub fn into_reader(self) -> Result<Box<dyn IndexFileEntryIterator>> {
         match &self {
-            MetadataFile::Packages(..) => PackagesFile::build(self, Arc::default()),
+            MetadataFile::Packages(..) => PackagesFile::build(self, Arc::default(), None),
             MetadataFile::Sources(..) => SourcesFile::build(self),
             MetadataFile::DiffIndex(..) => DiffIndexFile::build(self),
             MetadataFile::SumFile(..) => SumFile::build(self),

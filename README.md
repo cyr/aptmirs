@@ -40,6 +40,7 @@ These options can be set as part of the configuration file:
 | pgp_verify    | Whether or not to verify the PGP signature of the release file. If no signature is available, requiring verification will make the mirroring operation fail. This will also require you to provide a source of keys, usually via the `--pgp-key-path` option. The only recognized value is `true`. |
 | udeb          | Whether or not to download udeb packages. The arch used for this is the same as for normal packages. The only recognized value is `true` |
 | short_name    | Alias this repository into the specified path in the output folder. This enables multiple repositories that are from separate sources to be stored within the same path, using the same pool. It is therefore important that the repositories are related (i.e. trixie-security + trixie/trixie-updates/trixie-backports). The output will be stored under this name as the base folder instead of the usual hostname with path subfolders. |
+| num_pkg_versions | The maximum number of versions to download for any single package. Leaving this undefined will result in all listed versions to be downloaded. _Note: This will filter the package versions as they appear in the package file, from top to bottom - with no regard to version number. Typically, later versions appear first in the file, but if they are not you will not get the desired result using this setting. Verify with the binary package index of the repo you are mirroring if you are unsure._ |
 
 ### Configuration examples
 

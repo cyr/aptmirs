@@ -102,6 +102,7 @@ pub struct MirrorOpts {
     pub udeb: bool,
     pub short_name: Option<CompactString>,
     pub filter: Arc<[Regex]>,
+    pub num_pkg_versions: Option<usize>,
 }
 
 impl Eq for MirrorOpts {}
@@ -179,6 +180,7 @@ impl MirrorOpts {
         let mut filter = Vec::new();
         let mut pgp_verify = false;
         let mut udeb = false;
+        let mut num_pkg_versions: Option<usize> = None;
 
         let mut packages = false;
         let mut source = false;
@@ -226,6 +228,14 @@ impl MirrorOpts {
                     "pgp_verify" => pgp_verify = opt_val.to_lowercase() == "true",
                     "udeb" => udeb = opt_val.to_lowercase() == "true",
                     "short_name" => short_name = Some(opt_val.to_compact_string()),
+                    "num_pkg_versions" => {
+                        match opt_val.parse::<usize>() {
+                            Ok(v) => num_pkg_versions = Some(v),
+                            Err(..) => return Err(MirsError::Config {
+                                msg: CompactString::new("num_pkg_versions value has to be a positive number.")
+                            }),
+                        }
+                    },
                     _ => (),
                 }
             }
@@ -282,6 +292,7 @@ impl MirrorOpts {
             udeb,
             short_name,
             filter: filter.into(),
+            num_pkg_versions
         })
     }
 

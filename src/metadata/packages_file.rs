@@ -23,12 +23,16 @@ pub struct PackagesFile {
     size: u64,
     read: Arc<AtomicU64>,
     filter: Arc<[Regex]>,
+    num_pkg_versions: Option<usize>,
+    last_pkg: CompactString,
+    last_pkg_count: usize,
 }
 
 impl PackagesFile {
     pub fn build(
         meta_file: MetadataFile,
         filter: Arc<[Regex]>,
+        num_pkg_versions: Option<usize>,
     ) -> Result<Box<dyn IndexFileEntryIterator>> {
         let file = File::open(meta_file.path())?;
         let size = file.metadata()?.len();
@@ -42,6 +46,9 @@ impl PackagesFile {
             size,
             read: counter,
             filter,
+            num_pkg_versions,
+            last_pkg: CompactString::new(""),
+            last_pkg_count: 0
         }))
     }
 }
@@ -73,6 +80,19 @@ impl Iterator for PackagesFile {
                     Some(Ok((entry, package_name))) => {
                         if self.filter.iter().any(|r| r.is_match(&package_name)) {
                             continue;
+                        }
+
+                        if let Some(num_pkg_versions) = self.num_pkg_versions {
+                            if self.last_pkg == package_name {
+                                self.last_pkg_count += 1;
+                            } else {
+                                self.last_pkg_count = 1;
+                                self.last_pkg = package_name.clone();
+                            }
+
+                            if self.last_pkg_count > num_pkg_versions {
+                                continue
+                            }
                         }
 
                         return Some(Ok(entry));
