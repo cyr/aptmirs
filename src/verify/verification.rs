@@ -89,7 +89,7 @@ impl Step<VerifyState> for Verify {
 
         let index_files = metadata
             .into_iter()
-            .map(MetadataFile::into_reader)
+            .map(|v| MetadataFile::into_reader_with_opts(v, &ctx.state.opts))
             .collect::<Result<Vec<_>>>()?;
 
         let total_size = index_files.iter().map(|v| v.size()).sum();
