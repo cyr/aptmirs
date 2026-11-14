@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, fmt::Display, sync::Arc};
 
 use ahash::HashMap;
-use compact_str::CompactString;
+use compact_str::{CompactString, ToCompactString};
 use delete::Delete;
 use indicatif::HumanBytes;
 use inventory::Inventory;
@@ -142,7 +142,7 @@ impl Context<PruneState> {
             let base_identifier = if let Some(short_name) = &opt.short_name {
                 short_name
             } else {
-                &opt.url
+                &opt.url.to_compact_string()
             };
 
             if let Some(set) = mirrors.get_mut(base_identifier) {

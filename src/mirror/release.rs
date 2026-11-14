@@ -44,12 +44,18 @@ impl Step<MirrorState> for DownloadRelease {
 
         ctx.progress.files.inc_total(3);
 
-        for file_url in ctx.state.repo.release_urls() {
+        for file_url in ctx.state.repo.release_urls()? {
             let destination = ctx.state.repo.to_path_in_tmp(&file_url);
 
             let dl = Box::new(Download {
                 primary_target_path: destination.clone(),
-                url: file_url,
+                url: file_url
+                    .as_str()
+                    .try_into()
+                    .map_err(|e| MirsError::UrlParsing {
+                        url: file_url.to_string(),
+                        inner: e,
+                    })?,
                 checksum: None,
                 size: None,
                 symlink_paths: Vec::new(),

@@ -90,7 +90,7 @@ fn merge_similar(mut mirrors: Vec<MirrorOpts>) -> Vec<MirrorOpts> {
 
 #[derive(Default)]
 pub struct MirrorOpts {
-    pub url: CompactString,
+    pub url: String,
     pub suite: CompactString,
     pub components: Vec<CompactString>,
     pub arch: Vec<CompactString>,
@@ -170,6 +170,10 @@ impl MirrorOpts {
         if let Some(pgp_pub_key) = other.pgp_pub_key.take() {
             self.pgp_pub_key = Some(pgp_pub_key);
         }
+
+        if let Some(num_pkg_versions) = other.num_pkg_versions {
+            self.num_pkg_versions = Some(num_pkg_versions);
+        }
     }
 
     pub fn try_from(mut line: &str) -> Result<MirrorOpts> {
@@ -228,13 +232,15 @@ impl MirrorOpts {
                     "pgp_verify" => pgp_verify = opt_val.to_lowercase() == "true",
                     "udeb" => udeb = opt_val.to_lowercase() == "true",
                     "short_name" => short_name = Some(opt_val.to_compact_string()),
-                    "num_pkg_versions" => {
-                        match opt_val.parse::<usize>() {
-                            Ok(v) => num_pkg_versions = Some(v),
-                            Err(..) => return Err(MirsError::Config {
-                                msg: CompactString::new("num_pkg_versions value has to be a positive number.")
-                            }),
+                    "num_pkg_versions" => match opt_val.parse::<usize>() {
+                        Ok(0) | Err(..) => {
+                            return Err(MirsError::Config {
+                                msg: CompactString::new(
+                                    "num_pkg_versions value has to be a positive number.",
+                                ),
+                            });
                         }
+                        Ok(v) => num_pkg_versions = Some(v),
                     },
                     _ => (),
                 }
@@ -280,7 +286,7 @@ impl MirrorOpts {
         }
 
         Ok(Self {
-            url: url.to_compact_string(),
+            url: url.to_string(),
             suite: suite.to_compact_string(),
             components,
             arch,
@@ -292,7 +298,7 @@ impl MirrorOpts {
             udeb,
             short_name,
             filter: filter.into(),
-            num_pkg_versions
+            num_pkg_versions,
         })
     }
 

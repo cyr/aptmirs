@@ -29,7 +29,7 @@ pub enum MirsError {
 
     #[error("failed to download {url}: {status_code:?}")]
     Download {
-        url: CompactString,
+        url: String,
         status_code: Option<StatusCode>,
     },
 
@@ -70,7 +70,7 @@ pub enum MirsError {
     ParsingDiffIndex { path: FilePath },
 
     #[error("unable to parse url {url}")]
-    UrlParsing { url: CompactString },
+    UrlParsing { url: String, inner: url::ParseError },
 
     #[error("{msg}")]
     Config { msg: CompactString },
@@ -86,7 +86,7 @@ pub enum MirsError {
 
     #[error("checksum failed for: {url}, expected hash: {expected}, calculated hash: {hash}")]
     Checksum {
-        url: CompactString,
+        url: String,
         expected: CompactString,
         hash: String,
     },

@@ -73,6 +73,7 @@ struct CliOpts {
         long,
         env,
         value_name = "DL_THREADS",
+        value_parser = 1..255,
         default_value_t = 8_u8,
         help = "The maximum number of concurrent downloading tasks"
     )]

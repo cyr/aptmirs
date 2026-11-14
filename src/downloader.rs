@@ -9,14 +9,18 @@ use std::{
 };
 
 use async_channel::{Receiver, Sender, bounded};
-use compact_str::{CompactString, ToCompactString};
-use reqwest::{Client, IntoUrl, RequestBuilder, StatusCode};
+use compact_str::ToCompactString;
+use reqwest::{Client, RequestBuilder, Response, StatusCode};
 use tokio::{fs::symlink, io::AsyncWriteExt, task::JoinHandle};
+use url::Url;
 
 use crate::{
     apt_auth::AptAuth,
     error::{MirsError, Result},
-    metadata::{FilePath, checksum::Checksum},
+    metadata::{
+        FilePath,
+        checksum::{Checksum, Hasher},
+    },
 };
 
 use super::progress::Progress;
@@ -38,17 +42,12 @@ pub struct HttpClient {
 }
 
 impl HttpClient {
-    pub fn get<U>(&self, url: U) -> RequestBuilder
-    where
-        U: IntoUrl,
-    {
-        let mut builder = self.client.get(url.as_str());
+    pub fn get(&self, url: Url) -> RequestBuilder {
+        let auth: Option<&AptAuth> = self.auth.iter().find(|v| v.matches(&url));
 
-        if let Some(auth) = self
-            .auth
-            .iter()
-            .find(|AptAuth { host_prefix, .. }| url.as_str().starts_with(host_prefix))
-        {
+        let mut builder = self.client.get(url);
+
+        if let Some(auth) = auth {
             builder = builder.basic_auth(auth.username.clone(), Some(auth.password.clone()));
         }
 
@@ -87,7 +86,10 @@ impl Downloader {
         let mut tasks = Vec::with_capacity(num_threads as usize);
         let progress = Progress::new();
         let http_client = HttpClient {
-            client: reqwest::Client::new(),
+            client: reqwest::ClientBuilder::new()
+                .read_timeout(Duration::from_secs(10))
+                .build()
+                .expect("reqwest client should be buildable"),
             auth: Arc::new(apt_auth),
         };
 
@@ -193,7 +195,7 @@ async fn download_file<F>(
     http_client: &HttpClient,
     time: Option<Arc<AtomicU64>>,
     download: Box<Download>,
-    mut progress_cb: F,
+    progress_cb: F,
 ) -> Result<bool>
 where
     F: FnMut(u64),
@@ -206,64 +208,17 @@ where
         let mut output = tokio::fs::File::create(&download.primary_target_path).await?;
 
         if download.size.is_none_or(|v| v > 0) {
-            let Ok(mut response) = http_client.get(download.url.as_str()).send().await else {
-                drop(output);
-                tokio::fs::remove_file(&download.primary_target_path).await?;
-                return Err(MirsError::Download {
-                    url: download.url.clone(),
-                    status_code: None,
-                });
-            };
-
-            if response.status() != StatusCode::OK {
-                drop(output);
-                tokio::fs::remove_file(&download.primary_target_path).await?;
-                return Err(MirsError::Download {
-                    url: download.url.clone(),
-                    status_code: Some(response.status()),
-                });
-            }
-
-            if let Some(expected_checksum) = download.checksum {
-                let mut hasher = expected_checksum.create_hasher();
-
-                while let Some(chunk) = response.chunk().await? {
-                    output.write_all(&chunk).await?;
-                    hasher.consume(&chunk);
-
-                    progress_cb(chunk.len() as u64);
-                }
-
-                let checksum = hasher.compute();
-
-                if expected_checksum != checksum {
-                    drop(output);
-                    tokio::fs::remove_file(&download.primary_target_path).await?;
-                    return Err(MirsError::Checksum {
-                        url: download.url,
-                        expected: expected_checksum.to_compact_string(),
-                        hash: checksum.to_string(),
-                    });
-                }
-            } else {
-                while let Some(chunk) = response.chunk().await? {
-                    output.write_all(&chunk).await?;
-
-                    progress_cb(chunk.len() as u64);
-                }
+            if let Err(e) = get(http_client, &mut output, &download, progress_cb).await {
+                delete_file(output, &download.primary_target_path).await;
+                return Err(e);
             }
 
             output.flush().await?;
             downloaded = true;
+        }
 
-            if let Some(time_to_set) = time {
-                let time = time_from_atomic(&time_to_set);
-                let std_file = output.into_std().await;
-                tokio::task::spawn_blocking(move || {
-                    std_file.set_times(FileTimes::new().set_modified(time))
-                })
-                .await??;
-            }
+        if let Some(time_to_set) = time {
+            set_time(time_to_set, output).await?;
         }
     }
 
@@ -284,6 +239,100 @@ where
     }
 
     Ok(downloaded)
+}
+
+async fn get<F>(
+    http_client: &HttpClient,
+    output: &mut tokio::fs::File,
+    download: &Download,
+    progress_cb: F,
+) -> Result<()>
+where
+    F: FnMut(u64),
+{
+    let Ok(response) = http_client.get(download.url.clone()).send().await else {
+        return Err(MirsError::Download {
+            url: download.url.to_string(),
+            status_code: None,
+        });
+    };
+
+    if response.status() != StatusCode::OK {
+        return Err(MirsError::Download {
+            url: response.url().to_string(),
+            status_code: Some(response.status()),
+        });
+    }
+
+    if let Some(expected_checksum) = &download.checksum {
+        let mut hasher = expected_checksum.create_hasher();
+
+        write_from_response_with_hasher(response, output, &mut hasher, progress_cb).await?;
+
+        let checksum = hasher.compute();
+
+        if expected_checksum != &checksum {
+            return Err(MirsError::Checksum {
+                url: download.url.to_string(),
+                expected: expected_checksum.to_compact_string(),
+                hash: checksum.to_string(),
+            });
+        }
+    } else {
+        write_from_response(response, output, progress_cb).await?;
+    }
+
+    Ok(())
+}
+
+async fn set_time(time_to_set: Arc<AtomicU64>, output: tokio::fs::File) -> Result<()> {
+    let time = time_from_atomic(&time_to_set);
+    let std_file = output.into_std().await;
+    tokio::task::spawn_blocking(move || std_file.set_times(FileTimes::new().set_modified(time)))
+        .await??;
+
+    Ok(())
+}
+
+async fn delete_file(output: tokio::fs::File, path: &FilePath) {
+    drop(output);
+    _ = tokio::fs::remove_file(path).await;
+}
+
+async fn write_from_response<F>(
+    mut response: Response,
+    output: &mut tokio::fs::File,
+    mut progress_cb: F,
+) -> Result<()>
+where
+    F: FnMut(u64),
+{
+    while let Some(chunk) = response.chunk().await? {
+        output.write_all(&chunk).await?;
+
+        progress_cb(chunk.len() as u64);
+    }
+
+    Ok(())
+}
+
+async fn write_from_response_with_hasher<F>(
+    mut response: Response,
+    output: &mut tokio::fs::File,
+    hasher: &mut Box<dyn Hasher>,
+    mut progress_cb: F,
+) -> Result<()>
+where
+    F: FnMut(u64),
+{
+    while let Some(chunk) = response.chunk().await? {
+        output.write_all(&chunk).await?;
+        hasher.consume(&chunk);
+
+        progress_cb(chunk.len() as u64);
+    }
+
+    Ok(())
 }
 
 pub fn time_from_atomic(time: &Arc<AtomicU64>) -> SystemTime {
@@ -320,7 +369,7 @@ fn needs_downloading(dl: &Download) -> bool {
 
 #[derive(Debug)]
 pub struct Download {
-    pub url: CompactString,
+    pub url: Url,
     pub size: Option<u64>,
     pub checksum: Option<Checksum>,
     pub primary_target_path: FilePath,

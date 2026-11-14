@@ -19,7 +19,7 @@ pub const RELEASE_GPG_FILE_NAME: &str = "Release.gpg";
 
 #[derive(Default)]
 pub struct Repository {
-    pub root_url: CompactString,
+    pub root_url: String,
     pub root_dir: FilePath,
     pub dist_url: CompactString,
     pub tmp_dir: FilePath,
@@ -29,14 +29,15 @@ pub struct Repository {
 impl Repository {
     pub fn build(mirror_opts: &MirrorOpts, cli_opts: &CliOpts) -> Result<Self> {
         let root_url = match mirror_opts.url.as_str().strip_prefix('/') {
-            Some(url) => url.to_compact_string(),
+            Some(url) => url.to_string(),
             None => mirror_opts.url.clone(),
         };
 
         let dist_url = format_compact!("{root_url}/{}", mirror_opts.dist_part());
 
-        let parsed_url = Url::parse(&root_url).map_err(|_| MirsError::UrlParsing {
+        let parsed_url = Url::parse(&root_url).map_err(|e| MirsError::UrlParsing {
             url: root_url.clone(),
+            inner: e,
         })?;
 
         let pgp_pub_key = if let Some(pgp_signing_key) = &mirror_opts.pgp_pub_key {
@@ -63,14 +64,15 @@ impl Repository {
 
     pub fn build_with_tmp(mirror_opts: &MirrorOpts, cli_opts: &CliOpts) -> Result<Arc<Self>> {
         let root_url = match mirror_opts.url.as_str().strip_prefix('/') {
-            Some(url) => url.to_compact_string(),
+            Some(url) => url.to_string(),
             None => mirror_opts.url.clone(),
         };
 
         let dist_url = format_compact!("{root_url}/{}", mirror_opts.dist_part());
 
-        let parsed_url = Url::parse(&root_url).map_err(|_| MirsError::UrlParsing {
+        let parsed_url = Url::parse(&root_url).map_err(|e| MirsError::UrlParsing {
             url: root_url.clone(),
+            inner: e,
         })?;
 
         let pgp_pub_key = if let Some(pgp_signing_key) = &mirror_opts.pgp_pub_key {
@@ -97,20 +99,21 @@ impl Repository {
         }))
     }
 
-    pub fn release_urls(&self) -> [CompactString; 3] {
-        [
-            format_compact!("{}/{INRELEASE_FILE_NAME}", self.dist_url),
-            format_compact!("{}/{RELEASE_FILE_NAME}", self.dist_url),
-            format_compact!("{}/{RELEASE_GPG_FILE_NAME}", self.dist_url),
-        ]
+    pub fn release_urls(&self) -> Result<[Url; 3]> {
+        Ok([
+            Url::parse(&format!("{}/{INRELEASE_FILE_NAME}", self.dist_url)).unwrap(),
+            Url::parse(&format!("{}/{RELEASE_FILE_NAME}", self.dist_url)).unwrap(),
+            Url::parse(&format!("{}/{RELEASE_GPG_FILE_NAME}", self.dist_url)).unwrap(),
+        ])
     }
 
     pub fn has_specified_pgp_key(&self) -> bool {
         self.pgp_pub_key.is_some()
     }
 
-    fn to_path_in_local_dir(&self, base: &FilePath, url: &str) -> FilePath {
+    fn to_path_in_local_dir(&self, base: &FilePath, url: &Url) -> FilePath {
         let relative_path = url
+            .as_str()
             .strip_prefix(self.root_url.as_str())
             .expect("implementation error; download url should be in archive root");
 
@@ -146,20 +149,28 @@ impl Repository {
             .expect("input path should be in tmp dir")
     }
 
-    pub fn to_path_in_tmp(&self, url: &str) -> FilePath {
+    pub fn to_path_in_tmp(&self, url: &Url) -> FilePath {
         self.to_path_in_local_dir(&self.tmp_dir, url)
     }
 
-    pub fn to_path_in_root(&self, url: &str) -> FilePath {
+    pub fn to_path_in_root(&self, url: &Url) -> FilePath {
         self.to_path_in_local_dir(&self.root_dir, url)
     }
 
-    pub fn to_url_in_dist(&self, path: &str) -> CompactString {
-        format_compact!("{}/{}", self.dist_url, path)
+    pub fn to_url_in_dist(&self, path: &str) -> Result<Url> {
+        let url = format!("{}/{}", self.dist_url, path);
+
+        url.as_str()
+            .try_into()
+            .map_err(|e| MirsError::UrlParsing { url, inner: e })
     }
 
-    pub fn to_url_in_root(&self, path: &str) -> CompactString {
-        format_compact!("{}/{}", self.root_url, path)
+    pub fn to_url_in_root(&self, path: &str) -> Result<Url> {
+        let url = format!("{}/{}", self.root_url, path);
+
+        url.as_str()
+            .try_into()
+            .map_err(|e| MirsError::UrlParsing { url, inner: e })
     }
 
     pub fn rebase_rel_to_root<P: AsRef<str>>(&self, path: P) -> FilePath {
@@ -184,37 +195,37 @@ impl Repository {
             .expect("path should be in tmp")
     }
 
-    pub fn create_file_download(&self, package: IndexFileEntry) -> Box<Download> {
-        let url = self.to_url_in_root(&package.path);
+    pub fn create_file_download(&self, package: IndexFileEntry) -> Result<Box<Download>> {
+        let url = self.to_url_in_root(&package.path)?;
         let primary_target_path = self.to_path_in_root(&url);
 
-        Box::new(Download {
+        Ok(Box::new(Download {
             url,
             size: package.size,
             checksum: package.checksum,
             primary_target_path,
             symlink_paths: Vec::new(),
             always_download: false,
-        })
+        }))
     }
 
     pub fn create_raw_download(
         target_path: FilePath,
-        url: CompactString,
+        url: Url,
         checksum: Option<Checksum>,
-    ) -> Box<Download> {
-        Box::new(Download {
+    ) -> Result<Box<Download>> {
+        Ok(Box::new(Download {
             url,
             size: None,
             checksum,
             primary_target_path: target_path,
             symlink_paths: Vec::new(),
             always_download: true,
-        })
+        }))
     }
 
     pub fn create_metadata_download(
-        url: CompactString,
+        url: Url,
         file_path: &FilePath,
         file_entry: FileEntry,
         by_hash: bool,
@@ -304,7 +315,8 @@ fn sanitize_name(part: &str) -> CompactString {
 fn create_tmp_dir(url: &Url, suite: &str, base_dir: &FilePath) -> Result<FilePath> {
     let Some(host) = url.host() else {
         return Err(MirsError::UrlParsing {
-            url: url.to_compact_string(),
+            url: url.to_string(),
+            inner: url::ParseError::EmptyHost,
         });
     };
 
@@ -340,7 +352,8 @@ fn create_tmp_dir(url: &Url, suite: &str, base_dir: &FilePath) -> Result<FilePat
 fn local_dir_from_archive_url(url: &Url, dir: &FilePath) -> Result<FilePath> {
     let Some(host) = url.host() else {
         return Err(MirsError::UrlParsing {
-            url: url.to_compact_string(),
+            url: url.to_string(),
+            inner: url::ParseError::EmptyHost,
         });
     };
 

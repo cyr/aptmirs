@@ -48,7 +48,7 @@ impl Step<MirrorState> for DownloadMetadata {
 
         for (mut file, file_entry) in release.into_iter() {
             let mut add_by_hash = by_hash;
-            let url = ctx.state.repo.to_url_in_dist(file.as_ref());
+            let url = ctx.state.repo.to_url_in_dist(file.as_ref())?;
 
             let file_path_in_tmp = ctx.state.repo.to_path_in_tmp(&url);
 

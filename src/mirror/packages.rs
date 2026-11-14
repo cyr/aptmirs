@@ -68,7 +68,7 @@ impl Step<MirrorState> for DownloadFromPackageIndices {
                 for package in packages_file {
                     let package = package?;
 
-                    let dl = task_repo.create_file_download(package);
+                    let dl = task_repo.create_file_download(package)?;
                     async_handle.block_on(async { task_downloader.queue(dl).await })?;
 
                     file_progress

@@ -61,7 +61,7 @@ impl Step<MirrorState> for DownloadFromDiffs {
 
                     diff_file.path = rel_file_path;
 
-                    let dl = task_repo.create_file_download(diff_file);
+                    let dl = task_repo.create_file_download(diff_file)?;
                     async_handle.block_on(async { task_downloader.queue(dl).await })?;
                 }
             }

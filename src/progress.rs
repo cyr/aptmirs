@@ -30,7 +30,7 @@ impl Progress {
             files: ProgressPart::new(),
             bytes: ProgressPart::new(),
             total_bytes: Arc::new(AtomicU64::new(0)),
-            total_steps: Arc::new(AtomicUsize::new(4)),
+            total_steps: Arc::new(AtomicUsize::new(5)),
         }
     }
 
@@ -41,7 +41,7 @@ impl Progress {
             files: ProgressPart::new(),
             bytes: ProgressPart::new(),
             total_bytes: Arc::new(AtomicU64::new(0)),
-            total_steps: Arc::new(AtomicUsize::new(4)),
+            total_steps: Arc::new(AtomicUsize::new(5)),
         }
     }
 

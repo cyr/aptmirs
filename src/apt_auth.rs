@@ -1,8 +1,13 @@
 use std::{os::unix::fs::MetadataExt, path::Path, sync::Arc};
 
+use reqwest::Url;
 use tokio::{fs::File, io::AsyncReadExt};
 
-use crate::{CliOpts, error::Result, log};
+use crate::{
+    CliOpts,
+    error::{MirsError, Result},
+    log,
+};
 
 const MACHINE: &str = "machine";
 const LOGIN: &str = "login";
@@ -10,12 +15,32 @@ const PASSWORD: &str = "password";
 
 #[derive(Debug, Clone)]
 pub struct AptAuth {
-    pub host_prefix: String,
+    pub url: Url,
     pub username: Arc<str>,
     pub password: Arc<str>,
 }
 
 impl AptAuth {
+    pub fn matches(&self, other: &Url) -> bool {
+        if self.url.scheme() != other.scheme() {
+            return false;
+        }
+
+        if self.url.host() != other.host() {
+            return false;
+        }
+
+        if self.url.port_or_known_default() != other.port_or_known_default() {
+            return false;
+        }
+
+        if !other.path().starts_with(self.url.path()) {
+            return false;
+        }
+
+        true
+    }
+
     pub async fn parse(path: &Path) -> Result<Vec<Self>> {
         let mut file = File::open(path).await?;
         let mut buf = String::with_capacity(file.metadata().await?.size() as usize);
@@ -48,14 +73,20 @@ impl AptAuth {
                 continue;
             };
 
-            let host_prefix = if !machine.contains("://") {
-                format!("https://{machine}")
+            let url = if !machine.contains("://") {
+                Url::parse(&format!("https://{machine}")).map_err(|e| MirsError::UrlParsing {
+                    url: machine.to_string(),
+                    inner: e,
+                })?
             } else {
-                machine.to_string()
+                Url::parse(machine).map_err(|e| MirsError::UrlParsing {
+                    url: machine.to_string(),
+                    inner: e,
+                })?
             };
 
             vec.push(AptAuth {
-                host_prefix,
+                url,
                 username: login.into(),
                 password: password.into(),
             })
@@ -90,9 +121,12 @@ pub async fn read_auth(opts: &CliOpts) -> Result<Vec<AptAuth>> {
         match AptAuth::parse(entry.path()).await {
             Ok(v) => vec.extend(v),
             Err(e) => {
-                log(format!("unable to parse apt_auth config at {}: {e}", entry.path().to_string_lossy()));
-                continue
-            },
+                log(format!(
+                    "unable to parse apt_auth config at {}: {e}",
+                    entry.path().to_string_lossy()
+                ));
+                continue;
+            }
         }
     }
 

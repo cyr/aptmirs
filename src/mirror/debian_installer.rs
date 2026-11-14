@@ -81,9 +81,9 @@ impl Step<MirrorState> for DownloadDebianInstaller {
 
                     let new_rel_path = task_repo.strip_tmp_base(&new_path);
 
-                    let url = task_repo.to_url_in_root(new_rel_path.as_str());
+                    let url = task_repo.to_url_in_root(new_rel_path.as_str())?;
 
-                    let dl = Repository::create_raw_download(new_path, url, file.checksum);
+                    let dl = Repository::create_raw_download(new_path, url, file.checksum)?;
 
                     async_handle.block_on(async { task_downloader.queue(dl).await })?;
                 }

@@ -69,9 +69,9 @@ impl Iterator for SourcesFile {
 
             loop {
                 match self.reader.read_line(&mut self.buf) {
-                    Ok(0) => return None,
-                    Ok(1) => break,
-                    Ok(_) => (),
+                    Ok(0) if self.buf.is_empty() => return None,
+                    Ok(0..=1) => break,
+                    Ok(..) => {}
                     Err(e) => {
                         return Some(Err(MirsError::ReadingPackage {
                             path: self.file.path().clone(),

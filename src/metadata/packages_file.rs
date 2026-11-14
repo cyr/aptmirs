@@ -48,7 +48,7 @@ impl PackagesFile {
             filter,
             num_pkg_versions,
             last_pkg: CompactString::new(""),
-            last_pkg_count: 0
+            last_pkg_count: 0,
         }))
     }
 }
@@ -91,7 +91,7 @@ impl Iterator for PackagesFile {
                             }
 
                             if self.last_pkg_count > num_pkg_versions {
-                                continue
+                                continue;
                             }
                         }
 
